@@ -1,0 +1,25 @@
+{
+  "name": "hermes_multiple_tool_calls",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Two consecutive Hermes tool calls",
+  "input_chunks": [
+    "<tool_call>{\"name\":\"fn1\",\"arguments\":{\"a\":1}}</tool_call><tool_call>{\"name\":\"fn2\",\"arguments\":{\"b\":2}}</tool_call>"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "fn1",
+      "arguments": "{\"name\":\"fn1\",\"arguments\":{\"a\":1}}",
+      "index": 0,
+      "is_complete": true
+    },
+    {
+      "name": "fn2",
+      "arguments": "{\"name\":\"fn2\",\"arguments\":{\"b\":2}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

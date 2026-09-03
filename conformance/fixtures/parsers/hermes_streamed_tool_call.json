@@ -1,0 +1,23 @@
+{
+  "name": "hermes_streamed_tool_call",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Hermes tool call streamed across multiple chunks",
+  "input_chunks": [
+    "<tool_",
+    "call>",
+    "{\"name\":\"get",
+    "_weather\",\"arguments\":{\"city\":\"London\"}}",
+    "</tool_call>"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

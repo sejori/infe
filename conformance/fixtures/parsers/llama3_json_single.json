@@ -1,0 +1,19 @@
+{
+  "name": "llama3_json_single",
+  "dialect": "llama3_json",
+  "source": "synthetic",
+  "description": "Single Llama-3 JSON tool call in one chunk",
+  "input_chunks": [
+    "{\"name\":\"get_weather\",\"parameters\":{\"city\":\"London\"}}"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"name\":\"get_weather\",\"parameters\":{\"city\":\"London\"}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

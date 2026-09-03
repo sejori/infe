@@ -1,0 +1,23 @@
+{
+  "name": "deepseek_reasoning_block",
+  "dialect": "deepseek_reasoning",
+  "source": "synthetic",
+  "description": "DeepSeek reasoning block with content after",
+  "input_chunks": [
+    "<think>Let me think about this.</think>The answer is 42."
+  ],
+  "expected_tool_calls": [],
+  "expected_reasoning": [
+    {
+      "fragment": "Let me think about this.",
+      "is_complete": false
+    },
+    {
+      "fragment": "",
+      "is_complete": true
+    }
+  ],
+  "expected_content": [
+    "The answer is 42."
+  ]
+}

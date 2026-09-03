@@ -1,0 +1,22 @@
+{
+  "name": "hermes_content_tool_content",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Plain content, tool call, then more content",
+  "input_chunks": [
+    "Sure! <tool_call>{\"name\":\"fn\",\"arguments\":{}}</tool_call> Done."
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "fn",
+      "arguments": "{\"name\":\"fn\",\"arguments\":{}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": [
+    "Sure! ",
+    " Done."
+  ]
+}

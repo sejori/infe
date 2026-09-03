@@ -1,0 +1,19 @@
+{
+  "name": "hermes_single_tool_call",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Single Hermes tool call in one chunk",
+  "input_chunks": [
+    "<tool_call>{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}</tool_call>"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}
