@@ -54,6 +54,15 @@ pub trait DialectParser: Send + Sync {
 
     /// Reset the parser to its initial state (e.g. for a new request).
     fn reset(&mut self, state: &mut ToolCallArgState);
+
+    /// Signal end-of-stream: flush any buffered partial content.
+    ///
+    /// Called when the engine has no more tokens to feed. The default
+    /// implementation is a no-op; dialects with internal buffers
+    /// override it to emit any pending text as a final delta.
+    fn finish(&mut self, _state: &mut ToolCallArgState, result: &mut ParseResult) {
+        let _ = result; // default: nothing to flush
+    }
 }
 
 /// The top-level streaming parser, holding per-request state.
@@ -107,5 +116,15 @@ impl StreamingParser {
     /// Reset the parser for a new request.
     pub fn reset(&mut self) {
         self.dialect.reset(&mut self.state);
+    }
+
+    /// Signal end-of-stream and flush any buffered content.
+    ///
+    /// Call this when the engine has finished decoding for this request.
+    /// Returns a final [`ParseResult`] with any pending partial content.
+    pub fn finish(&mut self) -> ParseResult {
+        let mut result = ParseResult::new();
+        self.dialect.finish(&mut self.state, &mut result);
+        result
     }
 }

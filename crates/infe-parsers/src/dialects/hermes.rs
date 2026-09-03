@@ -87,6 +87,7 @@ impl DialectParser for HermesParser {
         while !remaining.is_empty() {
             match state.state {
                 ToolCallState::Idle => {
+                    // Check if remaining starts with the open marker.
                     if let Some(consumed) = Self::match_marker(remaining, open) {
                         state.state = ToolCallState::InToolCall;
                         remaining = &remaining[consumed..];
@@ -97,8 +98,18 @@ impl DialectParser for HermesParser {
                         // Search for the open marker anywhere in the text.
                         if let Some(pos) = remaining.find('<') {
                             let slice = &remaining[pos..];
+                            // First check if this is a full match.
+                            if let Some(consumed) = Self::match_marker(slice, open) {
+                                // Emit content before the marker.
+                                if pos > 0 {
+                                    result.content.push(remaining[..pos].to_string());
+                                }
+                                state.state = ToolCallState::InToolCall;
+                                remaining = &remaining[pos + consumed..];
+                                continue;
+                            }
+                            // Otherwise check if it's a partial prefix.
                             if Self::is_partial_prefix(slice, open) {
-                                // Emit content before the partial marker.
                                 if pos > 0 {
                                     result.content.push(remaining[..pos].to_string());
                                 }

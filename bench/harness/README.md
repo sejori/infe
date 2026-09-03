@@ -11,13 +11,32 @@ component enabled versus the stock Python path.
 
 ### Layer 1: Microbenchmark (in-Crate, Criterion)
 
-Pure parser throughput — no engine, no PyO3. Measures ns/byte and deltas/sec
-for each dialect across input shapes (single chunk, multi-chunk, plain content).
+Pure parser throughput — no engine, no PyO3. Measures ns/chunk and
+deltas/sec for each dialect across input shapes (single chunk, multi-chunk,
+plain content, concurrent streams).
+
+**Mocked inference model:** The benchmark uses `MockTokenStream`, a token
+generator inspired by `inference-lab`'s `serve::engine` `TokenEvent`
+pipeline. Instead of a real GPU decode loop, it emits pre-split text chunks
+that simulate per-token decode output — including tool-call markers split
+across token boundaries, JSON arguments, and reasoning blocks.
+
+This isolates the parser's CPU cost from the engine. It runs in CI (GitHub
+Actions) with reduced sample sizes and measurement times so it completes
+in minutes, not hours.
 
 Location: `crates/infe-parsers/benches/parse_stream.rs`
 
-This is the "ceiling" — if the Rust parser is not faster than Python here,
-it won't be faster end-to-end.
+**Benchmarks:**
+- `hermes/single_tool_call` — one Hermes tool call streamed across 10 chunks
+- `hermes_plain/no_tool_calls` — 18 chunks of plain content (pass-through path)
+- `llama3_json/single_tool_call` — one Llama-3 JSON tool call across 6 chunks
+- `deepseek_reasoning/reasoning_block` — reasoning block + content across 15 chunks
+- `concurrent/hermes_streams/{64,256,1024}` — N concurrent parsers fed in one step
+
+The concurrent-stream benchmark is the proxy for the ITL p99 claim: if
+parsing 1024 streams in one step is cheap, the batched approach wins over
+per-token Python crossings.
 
 ### Layer 2: PyO3 Crossing Cost (M0 Deliverable)
 
@@ -30,9 +49,16 @@ Script: `bench/harness/pyo3_crossing.py` (to be written)
 ### Layer 3: End-to-End A/B (M1 Deliverable)
 
 Runs the full engine with tool-heavy traffic, comparing stock vs infe-parsers.
+This uses `inference-lab` as the mocked inference server:
 
-- Load generator: `vllm bench serve` (widest datasets, SLO sweep)
-- Datasets: ShareGPT-style chat, tool-call-heavy
+- `inference-lab --serve --enable-directives` provides an OpenAI-compatible
+  API that emits scripted tool-call responses via the `<<respond:...>>`
+  directive system. This gives deterministic, reproducible tool-call traffic
+  without GPU costs.
+- The infe-parsers shim plugs into the same `TokenEvent` pipeline, replacing
+  the stock Python parser path.
+- Load generator: `inference-lab`'s built-in workload generator, or
+  `vllm bench serve` against the inference-lab server.
 - Concurrency levels: 64, 256, 1024 concurrent streams
 - Metrics: ITL p50/p99, API-server CPU%, throughput (tokens/sec)
 
