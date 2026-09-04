@@ -4,6 +4,12 @@
 //! them through a `StreamingParser`, asserting the accumulated output
 //! matches the expected deltas.
 //!
+//! Each fixture specifies:
+//! - `input_chunks`: the text chunks to feed (simulating per-token deltas)
+//! - `expected_tool_calls`: completed tool calls with name, arguments, index
+//! - `expected_content`: exact content strings (not substring match)
+//! - `expected_reasoning`: reasoning deltas
+//!
 //! Run with: `cargo test --test conformance`
 
 use infe_parsers::{DialectRegistry, StreamingParser};
@@ -34,6 +40,8 @@ struct Fixture {
 struct ExpectedToolCall {
     name: Option<String>,
     arguments: Option<String>,
+    #[serde(default)]
+    index: Option<usize>,
     #[serde(default)]
     is_complete: bool,
 }
@@ -111,6 +119,8 @@ fn run_fixture(fixture: &Fixture) {
 
     for (i, expected) in fixture.expected_tool_calls.iter().enumerate() {
         let actual = completed[i];
+
+        // Assert name (if specified)
         if let Some(ref name) = expected.name {
             assert_eq!(
                 actual.name.as_deref(),
@@ -120,6 +130,10 @@ fn run_fixture(fixture: &Fixture) {
                 i
             );
         }
+
+        // Assert arguments (if specified) — must be exact equality,
+        // not substring match. This catches defect #1 (wrapper JSON
+        // instead of arguments sub-object).
         if let Some(ref args) = expected.arguments {
             assert_eq!(
                 actual.arguments_fragment, *args,
@@ -127,6 +141,24 @@ fn run_fixture(fixture: &Fixture) {
                 fixture.name, i
             );
         }
+
+        // Assert index (if specified) — catches defect #6 (index not
+        // auto-incremented for multiple calls).
+        if let Some(expected_index) = expected.index {
+            assert_eq!(
+                actual.index, expected_index,
+                "{}: tool call {} index mismatch",
+                fixture.name, i
+            );
+        }
+
+        // Assert every completed tool call has an id (defect #3).
+        assert!(
+            actual.id.is_some(),
+            "{}: tool call {} should have a tool-call id",
+            fixture.name,
+            i
+        );
     }
 
     // Check reasoning
@@ -154,7 +186,7 @@ fn run_fixture(fixture: &Fixture) {
         }
     }
 
-    // Check content
+    // Check content — use equality, not contains, for exact matching.
     if !fixture.expected_content.is_empty() {
         let joined: String = all_content.join("");
         for expected in &fixture.expected_content {

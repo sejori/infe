@@ -4,16 +4,17 @@
 //! Dialects are selected by name at engine start. The registry is a simple
 //! match on a string — no dynamic loading, no plugin discovery. New dialects
 //! are added by extending the match arms in [`DialectRegistry::create`].
+//!
+//! Each dialect is either a **tool-call** parser (registered through the
+//! engine's tool-parser interface) or a **reasoning** parser (registered
+//! through the reasoning-parser interface). The [`ParserKind`] tag tells the
+//! shims which engine interface to use.
 
 use crate::dialects;
 use crate::parser::DialectParser;
-use crate::types::ParseError;
+use crate::types::{ParseError, ParserKind};
 
 /// A registry of available parser dialects.
-///
-/// This is a compile-time registry — all dialects are linked in, and the
-/// engine selects one by name. This avoids the complexity of dynamic plugin
-/// loading while keeping the door open for a future dynamic registry.
 #[derive(Debug, Clone, Default)]
 pub struct DialectRegistry;
 
@@ -26,6 +27,28 @@ impl DialectRegistry {
             dialects::Llama3JsonParser::new().name(),
             dialects::DeepSeekReasoningParser::new().name(),
         ]
+    }
+
+    /// List only tool-call dialect names.
+    #[must_use]
+    pub fn tool_dialects() -> Vec<&'static str> {
+        vec!["hermes", "llama3_json"]
+    }
+
+    /// List only reasoning dialect names.
+    #[must_use]
+    pub fn reasoning_dialects() -> Vec<&'static str> {
+        vec!["deepseek_reasoning"]
+    }
+
+    /// Get the kind (tool or reasoning) for a dialect name.
+    #[must_use]
+    pub fn kind(name: &str) -> Option<ParserKind> {
+        match name {
+            "hermes" | "llama3_json" => Some(ParserKind::Tool),
+            "deepseek_reasoning" => Some(ParserKind::Reasoning),
+            _ => None,
+        }
     }
 
     /// Create a new dialect parser by name.
@@ -59,6 +82,28 @@ mod tests {
         assert!(names.contains(&"hermes"));
         assert!(names.contains(&"llama3_json"));
         assert!(names.contains(&"deepseek_reasoning"));
+    }
+
+    #[test]
+    fn registry_tool_dialects() {
+        let tools = DialectRegistry::tool_dialects();
+        assert_eq!(tools, vec!["hermes", "llama3_json"]);
+    }
+
+    #[test]
+    fn registry_reasoning_dialects() {
+        let reasoning = DialectRegistry::reasoning_dialects();
+        assert_eq!(reasoning, vec!["deepseek_reasoning"]);
+    }
+
+    #[test]
+    fn registry_kind_lookup() {
+        assert_eq!(DialectRegistry::kind("hermes"), Some(ParserKind::Tool));
+        assert_eq!(
+            DialectRegistry::kind("deepseek_reasoning"),
+            Some(ParserKind::Reasoning)
+        );
+        assert_eq!(DialectRegistry::kind("nonexistent"), None);
     }
 
     #[test]

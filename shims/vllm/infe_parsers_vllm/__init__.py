@@ -7,7 +7,7 @@ No fork or patch to vLLM source is required — this is a pure plugin.
 Usage:
     vllm serve <model> \\
         --tool-call-parser infe_hermes \\
-        --tool-parser-plugin infe_parsers.shims.vllm
+        --tool-parser-plugin infe_parsers_vllm
 
 The shim creates one `infe_parsers.StreamingParser` per request and translates
 between vLLM's `DeltaMessage`/`ExtractedToolCallInformation` types and the
@@ -16,17 +16,23 @@ streaming, dialect state machines) all happens in Rust.
 
 This file is intentionally small and easy to regenerate when vLLM
 restructures — that is the entire point of the shim layer (see BRIEF.md §5.2).
+
+Note: This package is named `infe_parsers_vllm` (not `infe_parsers`) to
+avoid shadowing the real wheel on `sys.path`. vLLM loads it via
+`--tool-parser-plugin <path-to-this-dir>`.
 """
 
 import json
 import logging
 
-from vllm.entrypoints.generate.base.protocol import (
-    DeltaFunctionCall,
-    DeltaMessage,
-    DeltaToolCall,
-    ExtractedToolCallInformation,
-)
+try:  # vLLM main (2026-09) moved these; releases <=0.28 keep them under openai.engine
+    from vllm.entrypoints.generate.base.protocol import (
+        DeltaFunctionCall, DeltaMessage, DeltaToolCall, ExtractedToolCallInformation, FunctionCall, ToolCall,
+    )
+except ModuleNotFoundError:
+    from vllm.entrypoints.openai.engine.protocol import (
+        DeltaFunctionCall, DeltaMessage, DeltaToolCall, ExtractedToolCallInformation, FunctionCall, ToolCall,
+    )
 from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionRequest,
 )
@@ -40,19 +46,20 @@ from infe_parsers import StreamingParser as RustStreamingParser
 logger = logging.getLogger(__name__)
 
 # Mapping from vLLM parser names to infe dialect names.
+# Note: deepseek_reasoning is a reasoning parser, not a tool parser —
+# it should be registered via the reasoning-parser interface, not here.
 _INFE_DIALECT_MAP = {
     "infe_hermes": "hermes",
     "infe_llama3_json": "llama3_json",
-    "infe_deepseek_reasoning": "deepseek_reasoning",
 }
 
 
 class InfeToolParser(ToolParser):
     """vLLM ToolParser backed by the Rust infe-parsers crate.
 
-    Each dialect (hermes, llama3_json, deepseek_reasoning) is registered as a
-    separate vLLM parser name. Internally they all create an
-    `infe_parsers.StreamingParser` with the appropriate dialect.
+    Each dialect (hermes, llama3_json) is registered as a separate vLLM
+    parser name. Internally they all create an `infe_parsers.StreamingParser`
+    with the appropriate dialect.
     """
 
     # The infe dialect name this parser instance uses.
@@ -62,8 +69,6 @@ class InfeToolParser(ToolParser):
         super().__init__(tokenizer, tools)
         # One Rust parser per request — created fresh, fed deltas.
         self._rust_parser: RustStreamingParser | None = None
-        # Track tool call index for vLLM's DeltaToolCall indexing.
-        self._next_tool_index = 0
 
     def _ensure_parser(self):
         """Lazily create the Rust parser on first use."""
@@ -95,15 +100,13 @@ class InfeToolParser(ToolParser):
 
             delta_tool_calls.append(
                 DeltaToolCall(
-                    index=tc.get("index", self._next_tool_index),
+                    index=tc.get("index", 0),
                     type="function",
                     function=DeltaFunctionCall(**function_kwargs).model_dump(
                         exclude_none=True
                     ),
                 )
             )
-            if tc.get("is_complete"):
-                self._next_tool_index += 1
 
         # If we have reasoning, put it in the reasoning_content field.
         reasoning_content = None
@@ -113,7 +116,7 @@ class InfeToolParser(ToolParser):
         if content or delta_tool_calls or reasoning_content:
             return DeltaMessage(
                 content=content,
-                tool_calls=delta_tool_calls if delta_tool_calls else None,
+                tool_calls=delta_tool_calls,  # must be a list, not None (vLLM 0.28)
                 reasoning_content=reasoning_content,
             )
         return None
@@ -140,11 +143,6 @@ class InfeToolParser(ToolParser):
                 tool_calls=[],
                 content=model_output,
             )
-
-        from vllm.entrypoints.generate.base.protocol import (
-            FunctionCall,
-            ToolCall,
-        )
 
         tool_calls = []
         for tc in all_tool_calls:
@@ -197,9 +195,9 @@ def _make_parser_class(dialect: str, vllm_name: str) -> type[InfeToolParser]:
     )
 
 
-# Register all dialects with vLLM's ToolParserManager.
-# This happens at import time — vLLM calls import_tool_parser(plugin_path)
-# which triggers this module's __init__.
+# Register all tool-parser dialects with vLLM's ToolParserManager.
+# Note: reasoning dialects (deepseek_reasoning) are registered via the
+# reasoning-parser interface, not the tool registry.
 for _vllm_name, _dialect in _INFE_DIALECT_MAP.items():
     _cls = _make_parser_class(_dialect, _vllm_name)
     ToolParserManager.register_module(_vllm_name, module=_cls)

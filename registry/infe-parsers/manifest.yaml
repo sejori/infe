@@ -1,0 +1,61 @@
+manifest_version: "0.1.0"
+component: infe-parsers
+version: "0.1.0"
+type: tool_call_and_reasoning_parser
+status: alpha
+
+description: |
+  Streaming tool-call and reasoning-content parsers for LLM inference engines.
+  Replaces the per-token Python parsers in vLLM and SGLang with step-granular
+  Rust calls via PyO3.
+
+engine_seams:
+  vllm:
+    tool_parser:
+      flag: "--tool-call-parser infe_hermes --tool-parser-plugin <path-to-shims/vllm/infe_parsers_vllm>"
+      registered_via: ToolParserManager.register_module
+    reasoning_parser:
+      flag: "--reasoning-parser infe_deepseek_reasoning --reasoning-parser-plugin <path>"
+      registered_via: ReasoningParserManager
+    versions:
+      tested: "0.28.0"
+      min: "0.28.0"
+  sglang:
+    tool_call_parser:
+      flag: "--tool-call-parser infe_hermes"
+      registered_via: FunctionCallParser.ToolCallParserEnum
+      launcher: "python -m infe_parsers_sglang.launch -- <sglang args>"
+    versions:
+      tested: "0.5.18"
+      min: "0.5.18"
+
+dialects:
+  tool:
+    - name: hermes
+      models: ["NousResearch/Hermes", "Qwen2.5-Instruct", "many fine-tunes"]
+      markers: ["\u003ctool_call\u003e", "\u003c/tool_call\u003e"]
+    - name: llama3_json
+      models: ["Llama-3.1+", "Meta-Llama-3.1-Instruct"]
+      markers: ["{", "}"]
+  reasoning:
+    - name: deepseek_reasoning
+      models: ["DeepSeek-R1", "Qwen-QwQ"]
+      markers: ["\u003cthink\u003e", "\u003c/think\u003e"]
+
+parity:
+  arguments_extraction: true
+  tool_call_id: true
+  index_auto_increment: true
+  streaming_diff: true
+
+conformance:
+  fixtures: "conformance/fixtures/parsers/"
+  runner: "cargo test --test conformance"
+  fixture_count: 6
+  source: synthetic
+  note: "Fixtures should be mined from vllm/tests/tool_use + sglang/test/.../function_call"
+
+benchmarks:
+  latest_result: "bench/results/rtx4090-20260904/"
+  latest_date: "2026-09-04"
+  note: "First live A/B on RTX 4090. Parity failures identified; addressing."

@@ -41,6 +41,48 @@ jobs:
       - name: Bench (compile only)
         run: cargo bench --no-run
 
+  pyo3-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build PyO3 wheel
+        working-directory: python/infe-parsers
+        run: maturin build --release
+
+      - name: Install wheel and test import
+        working-directory: python/infe-parsers
+        run: |
+          pip install target/wheels/*.whl --force-reinstall
+          python -c "from infe_parsers import StreamingParser, list_dialects, list_tool_dialects, list_reasoning_dialects, dialect_kind; p = StreamingParser('hermes'); print(list_dialects()); print(list_tool_dialects()); print(list_reasoning_dialects()); print(dialect_kind('hermes'), dialect_kind('deepseek_reasoning'))"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: infe-parsers-wheel
+          path: python/infe-parsers/target/wheels/*.whl
+          retention-days: 30
+
   bench:
     runs-on: ubuntu-latest
     steps:

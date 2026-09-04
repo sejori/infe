@@ -12,8 +12,25 @@ Usage:
     result = parser.feed('...decoded text...')
     # result = {"tool_calls": [...], "reasoning": [...], "content": [...]}
     final = parser.finish()
-"""
-from ._infe_parsers import StreamingParser, list_dialects
 
-__all__ = ["StreamingParser", "list_dialects"]
+To check whether a dialect is a tool or reasoning parser:
+    from infe_parsers import dialect_kind
+    assert dialect_kind("hermes") == "tool"
+    assert dialect_kind("deepseek_reasoning") == "reasoning"
+"""
+from ._infe_parsers import (
+    StreamingParser,
+    list_dialects,
+    list_tool_dialects,
+    list_reasoning_dialects,
+    dialect_kind,
+)
+
+__all__ = [
+    "StreamingParser",
+    "list_dialects",
+    "list_tool_dialects",
+    "list_reasoning_dialects",
+    "dialect_kind",
+]
 __version__ = "0.1.0"

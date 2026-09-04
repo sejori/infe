@@ -15,8 +15,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use infe_parsers::DialectRegistry;
 use infe_parsers::StreamingParser;
+use infe_parsers::{DialectRegistry, ParserKind};
 
 /// A Python-facing streaming parser session.
 ///
@@ -33,6 +33,8 @@ impl PyStreamingParser {
     /// Create a new parser for the given dialect name.
     ///
     /// Available dialects: "hermes", "llama3_json", "deepseek_reasoning".
+    /// Use `dialect_kind()` to check whether a dialect is a tool-call or
+    /// reasoning parser.
     #[new]
     fn new(dialect: String) -> PyResult<Self> {
         let dialect_parser = DialectRegistry::create(&dialect)
@@ -130,10 +132,32 @@ fn list_dialects() -> Vec<&'static str> {
     DialectRegistry::names()
 }
 
+/// List only tool-call dialect names (for the engine's tool-parser registry).
+#[pyfunction]
+fn list_tool_dialects() -> Vec<&'static str> {
+    DialectRegistry::tool_dialects()
+}
+
+/// List only reasoning dialect names (for the engine's reasoning-parser registry).
+#[pyfunction]
+fn list_reasoning_dialects() -> Vec<&'static str> {
+    DialectRegistry::reasoning_dialects()
+}
+
+/// Return the kind of a dialect: "tool" or "reasoning".
+/// Returns None if the dialect is unknown.
+#[pyfunction]
+fn dialect_kind(name: &str) -> Option<&'static str> {
+    DialectRegistry::kind(name).map(ParserKind::as_str)
+}
+
 /// The Python module.
 #[pymodule]
 fn _infe_parsers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list_dialects, m)?)?;
+    m.add_function(wrap_pyfunction!(list_tool_dialects, m)?)?;
+    m.add_function(wrap_pyfunction!(list_reasoning_dialects, m)?)?;
+    m.add_function(wrap_pyfunction!(dialect_kind, m)?)?;
     m.add_class::<PyStreamingParser>()?;
     Ok(())
 }

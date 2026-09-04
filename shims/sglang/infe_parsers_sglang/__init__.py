@@ -4,10 +4,13 @@ This module registers infe-parsers dialects as SGLang detectors via the
 FunctionCallParser.ToolCallParserEnum registry. No fork or patch to
 SGLang source is required — this is a pure plugin loaded at import time.
 
+Note: This package is named `infe_parsers_sglang` (not `infe_parsers`) to
+avoid shadowing the real wheel on `sys.path`.
+
 Usage:
     # Register the infe detectors (do this before starting the server,
-    # or via SGLANG_TOOL_PARSER_MODULE env var if SGLang supports it).
-    import infe_parsers.shims.sglang  # noqa: F401
+    # or via the launcher module).
+    import infe_parsers_sglang  # noqa: F401
 
     # Then start SGLang with:
     #   --tool-call-parser infe_hermes
@@ -36,10 +39,11 @@ from infe_parsers import StreamingParser as RustStreamingParser
 logger = logging.getLogger(__name__)
 
 # Mapping from SGLang parser names to infe dialect names.
+# Note: deepseek_reasoning is a reasoning parser, not a tool parser —
+# it should be registered via the reasoning-parser interface.
 _INFE_DIALECT_MAP = {
     "infe_hermes": "hermes",
     "infe_llama3_json": "llama3_json",
-    "infe_deepseek_reasoning": "deepseek_reasoning",
 }
 
 
@@ -48,8 +52,7 @@ class InfeDetector(BaseFormatDetector):
 
     Implements the BaseFormatDetector interface so SGLang's
     FunctionCallParser can use it transparently. The parser state lives
-    in the Rust side — this class just forwards calls and translates
-    types.
+    in the Rust side — this class just forwards calls and translates types.
     """
 
     # The infe dialect name (set by subclass).
@@ -109,7 +112,11 @@ class InfeDetector(BaseFormatDetector):
             if not tc.get("is_complete"):
                 continue
             name = tc.get("name") or ""
+            # The arguments_fragment is now the extracted arguments
+            # sub-object (not the wrapper JSON), so use it directly.
             args_str = tc.get("arguments_fragment", "{}")
+            if not args_str:
+                args_str = "{}"
             try:
                 args_json = json.loads(args_str)
             except (json.JSONDecodeError, TypeError):
@@ -141,26 +148,42 @@ class InfeDetector(BaseFormatDetector):
         for tc in tool_calls:
             name = tc.get("name") or ""
             args_frag = tc.get("arguments_fragment", "")
-            if name and name in tool_indices:
-                if tc.get("is_complete"):
-                    calls.append(
-                        ToolCallItem(
-                            tool_index=tool_indices[name],
-                            name=name,
-                            parameters=args_frag,
-                        )
+            idx = tc.get("index", 0)
+            if tc.get("is_complete"):
+                # Complete call: send name + full arguments
+                calls.append(
+                    ToolCallItem(
+                        tool_index=tool_indices.get(name, -1) if name else idx,
+                        name=name if name else None,
+                        parameters=args_frag if args_frag else "{}",
                     )
-                else:
-                    calls.append(
-                        ToolCallItem(
-                            tool_index=tool_indices[name],
-                            name=name if not self.current_tool_name_sent else None,
-                            parameters=args_frag,
-                        )
+                )
+            elif name:
+                # Incomplete but has a name — stream arguments fragments
+                calls.append(
+                    ToolCallItem(
+                        tool_index=tool_indices.get(name, -1),
+                        name=name,
+                        parameters=args_frag,
                     )
+                )
 
         normal_text = "".join(content_parts) if content_parts else ""
         return StreamingParseResult(normal_text=normal_text, calls=calls)
+
+    def structure_info(self):
+        """Required abstract method (constrained decoding for tool_choice).
+        Mirrors HermesDetector."""
+        from sglang.srt.function_call.core_types import StructureInfo
+        if self._infe_dialect == "hermes":
+            return lambda name: StructureInfo(
+                begin='\u003ctool_call\u003e{"name":"' + name + '", "arguments":',
+                end='}\u003c/tool_call\u003e',
+                trigger='\u003ctool_call\u003e')
+        return lambda name: StructureInfo(
+            begin='{"name":"' + name + '", "parameters":',
+            end='}',
+            trigger='')
 
     def finish(self, tools: list[Tool]) -> StreamingParseResult:
         """Flush any buffered content at end of stream."""
@@ -181,7 +204,7 @@ def _make_detector_class(dialect: str, sglang_name: str) -> type[InfeDetector]:
     )
 
 
-# Register all dialects with SGLang's FunctionCallParser registry.
+# Register all tool-parser dialects with SGLang's FunctionCallParser registry.
 for _sglang_name, _dialect in _INFE_DIALECT_MAP.items():
     _cls = _make_detector_class(_dialect, _sglang_name)
     FunctionCallParser.ToolCallParserEnum[_sglang_name] = _cls

@@ -9,14 +9,14 @@
   "expected_tool_calls": [
     {
       "name": "fn1",
-      "arguments": "{\"name\":\"fn1\",\"arguments\":{\"a\":1}}",
+      "arguments": "{\"a\":1}",
       "index": 0,
       "is_complete": true
     },
     {
       "name": "fn2",
-      "arguments": "{\"name\":\"fn2\",\"arguments\":{\"b\":2}}",
-      "index": 0,
+      "arguments": "{\"b\":2}",
+      "index": 1,
       "is_complete": true
     }
   ],

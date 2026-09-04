@@ -9,7 +9,7 @@
   "expected_tool_calls": [
     {
       "name": "get_weather",
-      "arguments": "{\"name\":\"get_weather\",\"parameters\":{\"city\":\"London\"}}",
+      "arguments": "{\"city\":\"London\"}",
       "index": 0,
       "is_complete": true
     }
