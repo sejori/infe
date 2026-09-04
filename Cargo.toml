@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/infe-core",
     "crates/infe-parsers",
+    "python/infe-parsers",
 ]
 
 [workspace.package]

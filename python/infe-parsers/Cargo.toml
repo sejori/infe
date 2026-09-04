@@ -1,0 +1,20 @@
+[package]
+name = "infe-parsers-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Python bindings for infe-parsers (PyO3/maturin)"
+
+[lib]
+name = "_infe_parsers"
+crate-type = ["cdylib"]
+
+[dependencies]
+infe-parsers = { path = "../../crates/infe-parsers", version = "0.1.0" }
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py37"] }
+
+[lints]
+workspace = true

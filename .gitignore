@@ -1,1 +1,3 @@
 /target
+python/infe-parsers/python/infe_parsers/_infe_parsers*.so
+**/__pycache__/
