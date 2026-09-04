@@ -34,6 +34,9 @@ dialects:
     - name: hermes
       models: ["NousResearch/Hermes", "Qwen2.5-Instruct", "many fine-tunes"]
       markers: ["\u003ctool_call\u003e", "\u003c/tool_call\u003e"]
+      features:
+        markerless_continuation: true
+        description: "After >=1 completed call, bare '{' is treated as a new tool call (B6 fix for SGLang template)"
     - name: llama3_json
       models: ["Llama-3.1+", "Meta-Llama-3.1-Instruct"]
       markers: ["{", "}"]
@@ -47,6 +50,8 @@ parity:
   tool_call_id: true
   index_auto_increment: true
   streaming_diff: true
+  random_ids: true
+  markerless_continuation: true
 
 conformance:
   fixtures: "conformance/fixtures/parsers/"
@@ -56,6 +61,6 @@ conformance:
   note: "Fixtures should be mined from vllm/tests/tool_use + sglang/test/.../function_call"
 
 benchmarks:
-  latest_result: "bench/results/rtx4090-20260904/"
+  latest_result: "bench/results/rtx4090-20260904-round2/"
   latest_date: "2026-09-04"
-  note: "First live A/B on RTX 4090. Parity failures identified; addressing."
+  note: "Round 2 A/B on RTX 4090. vLLM parity confirmed (args/id/name all match). SGLang B6 half-calls fixed. vLLM shim now streams incremental diffs."
