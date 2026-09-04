@@ -1,8 +1,8 @@
 # Next-wave task list (handoff, 2026-09-04) — updated after round 2
 
-**Round-2 status (see review, "Round 2"):** A1–A5, B1, B3, B4 done. **B2 (incremental argument streaming) is NOT done** and
-blocks every performance number. New items: B6, B7, A6, D5 below. One uncommitted fix in the working tree:
-`shims/vllm/infe_parsers_vllm/__init__.py` (id moved from `DeltaFunctionCall` to `DeltaToolCall`).
+**Round-3 status (post B6/B7/shim-fix commit):** A1–A5, B1–B4, B6, B7 done. The vLLM shim now
+buffers excess deltas and drips them one per token (matching stock streaming granularity). Tool-call IDs
+are random (xorshift PRNG). Marker-less continuation calls are parsed via brace-depth tracking.**
 
 Source of truth for *why*: `docs/review-2026-09-04.md`. This file is the *what*, ordered, with acceptance checks.
 Working fixes exist only as scratch copies under `bench/results/rtx4090-20260904/scratch/`; nothing in
