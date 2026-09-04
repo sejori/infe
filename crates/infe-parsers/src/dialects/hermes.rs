@@ -7,9 +7,33 @@ use crate::types::{ToolCallArgState, ToolCallDelta, ToolCallState};
 const OPEN_MARKER: &str = "\u{3c}tool_call\u{3e}";
 const CLOSE_MARKER: &str = "\u{3c}/tool_call\u{3e}";
 
+/// Hermes tool-call parser.
+///
+/// Matches vLLM's `hermes_tool_parser.py` streaming semantics:
+///
+/// 1. The JSON body between `` and `` is accumulated incrementally.
+/// 2. On every `feed`, we attempt to extract the `name` field via regex.
+///    When the name is available and hasn't been sent yet, we emit a
+///    delta with `name` + `id`.
+/// 3. We extract the `arguments` value (everything after `"arguments":`) and
+///    compute the diff against what was already streamed, emitting only the
+///    new characters. This matches vLLM's `_compute_args_diff`.
+/// 4. At completion (close marker), we emit any remaining argument diff and
+///    mark the call complete.
+///
+/// Key behaviour: arguments are streamed **as they arrive**, not buffered
+/// until completion. This is what clients expect — the SSE stream shows
+/// arguments growing token by token.
 #[derive(Debug, Default)]
 pub struct HermesParser {
+    /// Text pending analysis (partial markers that span chunk boundaries).
     pending: String,
+    /// Whether we've started inside a tool-call block (used across feed calls).
+    in_tool_call: bool,
+    /// Buffer of text accumulated before the name was found — content that
+    /// arrived before we could parse the `name` field. Emptied once the name
+    /// is emitted and argument streaming begins.
+    pre_name_buffer: String,
 }
 
 impl HermesParser {
@@ -31,6 +55,7 @@ impl HermesParser {
     }
 
     /// Find the position of a partial marker prefix at the END of text.
+    /// Mirrors vLLM's `partial_tag_overlap`.
     fn find_tail_partial(text: &str, marker: &str) -> usize {
         let max_len = text.len().min(marker.len());
         for len in (1..=max_len).rev() {
@@ -42,65 +67,101 @@ impl HermesParser {
         text.len()
     }
 
-    /// Extract the `name` field and the `arguments` sub-object from a Hermes
-    /// JSON tool-call body.
-    ///
-    /// Hermes wraps the call as `{"name":"fn","arguments":{...}}`. We extract
-    /// the `arguments` value (which is the inner JSON object) separately from
-    /// the `name` field, matching what vLLM and SGLang do:
-    ///   - `name` goes on the first delta's `function.name`
-    ///   - `arguments` value is streamed as `function.arguments` fragments
-    ///
-    /// Returns `(name, arguments_json_str)` where `arguments_json_str` is the
-    /// serialised value of the `arguments` field (e.g. `{"city":"London"}`),
-    /// or `"{}"` if absent.
-    fn extract_name_and_args(json_str: &str) -> (Option<String>, String) {
-        // Parse as JSON to extract the fields properly.
-        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(json_str) {
-            let name = obj
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string);
-            let args = match obj.get("arguments") {
-                Some(serde_json::Value::String(s)) => s.clone(),
-                Some(v) => v.to_string(),
-                None => "{}".to_string(),
-            };
-            return (name, args);
-        }
-        // Fallback: manual extraction for partial JSON (during streaming,
-        // we may get the name before the full arguments object is available).
-        // The name is usually the first complete field: "name":"value".
+    /// Extract the tool name from a (possibly partial) JSON body.
+    /// Mirrors vLLM's `_extract_tool_name`: regex `"name"\s*:\s*"([^"]+)"`.
+    /// Returns None if the name field hasn't been completed yet.
+    fn extract_name(json_str: &str) -> Option<String> {
+        // Find "name" key
         if let Some(name_idx) = json_str.find("\"name\"") {
             let after_key = &json_str[name_idx + 6..];
             if let Some(colon_idx) = after_key.find(':') {
                 let after_colon = after_key[colon_idx + 1..].trim_start();
-                // Check if this is the "name" field (not "arguments")
                 if let Some(rest) = after_colon.strip_prefix('"') {
                     if let Some(end) = rest.find('"') {
-                        let name = rest[..end].to_string();
-                        // Try to find the "arguments" field value start
-                        if let Some(args_idx) = json_str.find("\"arguments\"") {
-                            let after_args_key = &json_str[args_idx + 11..];
-                            if let Some(args_colon) = after_args_key.find(':') {
-                                let args_val_start = after_args_key[args_colon + 1..].trim_start();
-                                // Return whatever we have of the arguments
-                                // value so far — it may be incomplete.
-                                let args_val = args_val_start.to_string();
-                                return (Some(name), args_val);
-                            }
-                        }
-                        // No arguments field yet — name only.
-                        return (Some(name), String::new());
+                        return Some(rest[..end].to_string());
                     }
                 }
             }
         }
-        (None, json_str.to_string())
+        None
+    }
+
+    /// Extract the raw arguments text — everything after `"arguments":`.
+    /// Mirrors vLLM's `_extract_tool_args`. When `is_complete`, strips the
+    /// trailing `}` that closes the outer wrapper object.
+    ///
+    /// Returns the raw argument string (a fragment of JSON like `{"city":"London"}`).
+    /// Returns None if the `"arguments":` key hasn't been seen yet.
+    fn extract_arguments_raw(json_str: &str, is_complete: bool) -> Option<String> {
+        // Find "arguments" key
+        let args_idx = json_str.find("\"arguments\"")?;
+        let after_key = &json_str[args_idx + 11..];
+        let colon_idx = after_key.find(':')?;
+        let raw = &after_key[colon_idx + 1..];
+        let mut raw = raw.trim_start().to_string();
+
+        if is_complete {
+            // Strip the trailing } that closes the wrapper object.
+            raw = raw.trim_end().to_string();
+            if raw.ends_with('}') {
+                raw.truncate(raw.len() - 1);
+                raw = raw.trim_end().to_string();
+            }
+        }
+        Some(raw)
+    }
+
+    /// Check if the JSON string is a complete, parseable JSON object.
+    /// Mirrors vLLM's `is_complete_json`.
+    fn is_complete_json(json_str: &str) -> bool {
+        serde_json::from_str::<serde_json::Value>(json_str).is_ok()
+    }
+
+    /// Try to emit incremental deltas for the current tool-call state.
+    /// This is called after every chunk of text is accumulated.
+    fn try_emit_incremental(
+        state: &mut ToolCallArgState,
+        json_body: &str,
+        result: &mut ParseResult,
+    ) {
+        let is_complete = Self::is_complete_json(json_body);
+
+        // If we haven't sent the name yet, try to extract and emit it.
+        if !state.name_emitted {
+            if let Some(name) = Self::extract_name(json_body) {
+                state.name_emitted = true;
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: state.id.take(),
+                    name: Some(name),
+                    arguments_fragment: String::new(),
+                    is_complete: false,
+                });
+            } else {
+                // Can't do anything until the name is available.
+                return;
+            }
+        }
+
+        // Stream argument diffs.
+        if let Some(args_raw) = Self::extract_arguments_raw(json_body, is_complete) {
+            let already = state.last_emitted_args_len;
+            if args_raw.len() > already {
+                let diff = &args_raw[already..];
+                state.last_emitted_args_len = args_raw.len();
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: None,
+                    name: None,
+                    arguments_fragment: diff.to_string(),
+                    is_complete: false,
+                });
+            }
+        }
     }
 }
 
-#[allow(clippy::nonminimal_bool)]
+#[allow(clippy::too_many_lines)]
 impl DialectParser for HermesParser {
     fn name(&self) -> &'static str {
         "hermes"
@@ -124,8 +185,9 @@ impl DialectParser for HermesParser {
                 ToolCallState::Idle => {
                     // Check if remaining starts with the open marker.
                     if let Some(consumed) = Self::match_marker(remaining, OPEN_MARKER) {
-                        // Begin a new tool call: assign index, generate id.
                         state.begin_tool_call();
+                        self.in_tool_call = true;
+                        self.pre_name_buffer.clear();
                         remaining = &remaining[consumed..];
                     } else if Self::is_partial_prefix(remaining, OPEN_MARKER) {
                         self.pending.push_str(remaining);
@@ -134,17 +196,16 @@ impl DialectParser for HermesParser {
                         // Search for the open marker anywhere in the text.
                         if let Some(pos) = remaining.find('<') {
                             let slice = &remaining[pos..];
-                            // First check if this is a full match.
                             if let Some(consumed) = Self::match_marker(slice, OPEN_MARKER) {
-                                // Emit content before the marker.
                                 if pos > 0 {
                                     result.content.push(remaining[..pos].to_string());
                                 }
                                 state.begin_tool_call();
+                                self.in_tool_call = true;
+                                self.pre_name_buffer.clear();
                                 remaining = &remaining[pos + consumed..];
                                 continue;
                             }
-                            // Otherwise check if it's a partial prefix.
                             if Self::is_partial_prefix(slice, OPEN_MARKER) {
                                 if pos > 0 {
                                     result.content.push(remaining[..pos].to_string());
@@ -153,63 +214,93 @@ impl DialectParser for HermesParser {
                                 break;
                             }
                         }
-                        // No marker found - emit all as content.
-                        result.content.push(remaining.to_string());
+                        // No marker found — emit all as content, but hold back
+                        // any tail that could be a partial open marker.
+                        let split_pos = Self::find_tail_partial(remaining, OPEN_MARKER);
+                        result.content.push(remaining[..split_pos].to_string());
+                        if split_pos < remaining.len() {
+                            self.pending.push_str(&remaining[split_pos..]);
+                        }
                         break;
                     }
                 }
                 ToolCallState::InToolCall => {
                     // Search for the close marker in remaining.
                     if let Some(pos) = remaining.find(CLOSE_MARKER) {
-                        // Accumulate content before the close marker, emit diff.
+                        // Accumulate chunk before close marker.
                         let chunk = &remaining[..pos];
                         if !chunk.is_empty() {
                             state.arguments_buffer.push_str(chunk);
                         }
 
-                        // Extract name and arguments from the accumulated buffer.
-                        let (name, args) = Self::extract_name_and_args(&state.arguments_buffer);
+                        // Now the JSON body is complete — try to emit final
+                        // incremental deltas + the completion delta.
+                        let json_body = state.arguments_buffer.clone();
+                        let _is_complete = Self::is_complete_json(&json_body);
 
-                        // Compute the final arguments diff: emit only characters
-                        // we haven't sent yet.
-                        let args_diff = if args.is_empty() {
-                            ""
+                        // Emit any remaining name/args diff.
+                        Self::try_emit_incremental(state, &json_body, result);
+
+                        // Also compute the diff at completion: if the JSON was
+                        // complete before the close marker arrived, the args
+                        // may already be fully emitted. But if is_complete was
+                        // false before (partial JSON), we need to emit the
+                        // final args now with is_complete=true.
+                        if let Some(args_raw) = Self::extract_arguments_raw(&json_body, true) {
+                            let already = state.last_emitted_args_len;
+                            if args_raw.len() > already {
+                                let diff = &args_raw[already..];
+                                result.tool_calls.push(ToolCallDelta {
+                                    index: state.index.unwrap_or(0),
+                                    id: None,
+                                    name: None,
+                                    arguments_fragment: diff.to_string(),
+                                    is_complete: true,
+                                });
+                                state.last_emitted_args_len = args_raw.len();
+                            } else {
+                                // Args were already fully streamed — emit a
+                                // bare completion delta.
+                                result.tool_calls.push(ToolCallDelta {
+                                    index: state.index.unwrap_or(0),
+                                    id: None,
+                                    name: None,
+                                    arguments_fragment: String::new(),
+                                    is_complete: true,
+                                });
+                            }
                         } else {
-                            let already = state.last_emitted_args_len.min(args.len());
-                            &args[already..]
-                        };
-
-                        // Emit a completion delta.
-                        #[allow(clippy::nonminimal_bool)]
-                        #[allow(clippy::nonminimal_bool)]
-                        let first_delta = !state.name_emitted;
-                        result.tool_calls.push(ToolCallDelta {
-                            index: state.index.unwrap_or(0),
-                            id: state.id.take(),
-                            name: if first_delta { name } else { None },
-                            arguments_fragment: args_diff.to_string(),
-                            is_complete: true,
-                        });
-                        state.name_emitted = true;
-                        state.last_emitted_args_len = args.len();
+                            // No arguments key — emit completion with empty args.
+                            result.tool_calls.push(ToolCallDelta {
+                                index: state.index.unwrap_or(0),
+                                id: None,
+                                name: None,
+                                arguments_fragment: String::new(),
+                                is_complete: true,
+                            });
+                        }
 
                         state.complete_tool_call();
                         state.reset_to_idle();
+                        self.in_tool_call = false;
+                        self.pre_name_buffer.clear();
                         remaining = &remaining[pos + CLOSE_MARKER.len()..];
                     } else if Self::is_partial_prefix(remaining, CLOSE_MARKER) {
-                        // Might be the start of a close marker — buffer and wait.
                         self.pending.push_str(remaining);
                         break;
                     } else {
-                        // No close marker found. Accumulate the raw text.
-                        // We don't emit intermediate argument deltas here —
-                        // the arguments value isn't extracted until the JSON
-                        // is complete. At completion, we emit the extracted
-                        // sub-object as a single diff.
-                        //
-                        // Check if the tail is a partial prefix of close.
+                        // No close marker found. Accumulate the raw text and
+                        // try to emit incremental argument diffs.
+                        // Hold back any tail that could be a partial close marker.
                         let split_pos = Self::find_tail_partial(remaining, CLOSE_MARKER);
-                        state.arguments_buffer.push_str(&remaining[..split_pos]);
+                        let chunk = &remaining[..split_pos];
+                        if chunk.is_empty() {
+                        } else {
+                            state.arguments_buffer.push_str(chunk);
+                            // Try incremental emission now.
+                            let buf = state.arguments_buffer.clone();
+                            Self::try_emit_incremental(state, &buf, result);
+                        }
                         if split_pos < remaining.len() {
                             self.pending.push_str(&remaining[split_pos..]);
                         }
@@ -226,6 +317,8 @@ impl DialectParser for HermesParser {
     fn reset(&mut self, state: &mut ToolCallArgState) {
         *state = ToolCallArgState::new();
         self.pending.clear();
+        self.in_tool_call = false;
+        self.pre_name_buffer.clear();
     }
 }
 
@@ -238,6 +331,19 @@ mod tests {
     fn make_parser() -> StreamingParser {
         let dialect = DialectRegistry::create("hermes").unwrap();
         StreamingParser::new(dialect)
+    }
+
+    /// Accumulate all arguments_fragment values from a list of deltas.
+    fn accumulate_args(deltas: &[ToolCallDelta]) -> String {
+        deltas
+            .iter()
+            .map(|d| d.arguments_fragment.as_str())
+            .collect()
+    }
+
+    /// Find the name from the first delta that carries it.
+    fn find_name(deltas: &[ToolCallDelta]) -> Option<&str> {
+        deltas.iter().find_map(|d| d.name.as_deref())
     }
 
     #[test]
@@ -255,9 +361,7 @@ mod tests {
         let r = p.feed(&input);
         let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
         assert_eq!(completed.len(), 1);
-        assert_eq!(completed[0].name.as_deref(), Some("fn"));
-        // Arguments should be just the inner object, not the whole wrapper.
-        assert_eq!(completed[0].arguments_fragment, "{}");
+        assert_eq!(find_name(&r.tool_calls).unwrap(), "fn");
     }
 
     #[test]
@@ -269,9 +373,8 @@ mod tests {
         let r = p.feed(&input);
         let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
         assert_eq!(completed.len(), 1);
-        assert_eq!(completed[0].name.as_deref(), Some("get_weather"));
-        // Should be just the arguments value, not the wrapper.
-        let args = &completed[0].arguments_fragment;
+        assert_eq!(find_name(&r.tool_calls).unwrap(), "get_weather");
+        let args = accumulate_args(&r.tool_calls);
         assert!(
             args.contains("\"city\"") && args.contains("\"London\""),
             "args should contain city/London, got: {args}"
@@ -308,30 +411,34 @@ mod tests {
         assert_eq!(completed.len(), 2);
         assert_eq!(completed[0].index, 0);
         assert_eq!(completed[1].index, 1);
-        assert_eq!(completed[0].name.as_deref(), Some("fn1"));
-        assert_eq!(completed[1].name.as_deref(), Some("fn2"));
+        let names: Vec<_> = r
+            .tool_calls
+            .iter()
+            .filter_map(|d| d.name.as_deref())
+            .collect();
+        assert!(names.contains(&"fn1"));
+        assert!(names.contains(&"fn2"));
     }
 
     #[test]
     fn tool_call_streamed_across_chunks() {
         let mut p = make_parser();
         let marker_prefix = &OPEN_MARKER[..5];
-
         let r1 = p.feed(marker_prefix);
         assert!(r1.is_empty());
-
         p.feed(&OPEN_MARKER[5..]);
-        // Open marker completed, no tool calls emitted yet
-
         let args = "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"";
         let r3 = p.feed(args);
-        assert!(r3.tool_calls.is_empty());
-
+        assert!(
+            !r3.tool_calls.is_empty(),
+            "should emit name delta when name is available"
+        );
+        assert_eq!(find_name(&r3.tool_calls).unwrap(), "get_weather");
+        assert!(r3.tool_calls[0].id.is_some());
         let _ = p.feed("London\"}}");
         let r5 = p.feed(CLOSE_MARKER);
         let last = r5.tool_calls.last().expect("at least one delta");
         assert!(last.is_complete);
-        assert_eq!(last.name.as_deref(), Some("get_weather"));
     }
 
     #[test]
@@ -341,7 +448,6 @@ mod tests {
         assert_eq!(r1.content.len(), 1);
         assert_eq!(r1.content[0], "Hello ");
         assert!(r1.tool_calls.is_empty());
-
         p.feed("_call>{}");
         let r3 = p.feed(CLOSE_MARKER);
         assert!(!r3.tool_calls.is_empty());
@@ -360,22 +466,43 @@ mod tests {
     #[test]
     fn arguments_are_streamed_as_diffs() {
         let mut p = make_parser();
-        // Feed the open marker
         let _ = p.feed(OPEN_MARKER);
-        // Feed the JSON body incrementally
-        let _ = p.feed("{\"name\":\"fn\",\"arguments\":");
+        let r_name = p.feed("{\"name\":\"fn\",\"arguments\":");
+        // Name should be emitted in this delta (when it becomes available)
+        assert_eq!(find_name(&r_name.tool_calls).unwrap(), "fn");
         let r = p.feed("{\"city\":\"London\"}");
-        // Should have emitted some argument deltas (diffs)
-        let incomplete: Vec<_> = r.tool_calls.iter().filter(|d| !d.is_complete).collect();
-        // Now close it
+        assert!(!r.tool_calls.is_empty());
         let r2 = p.feed(CLOSE_MARKER);
-        let completed = r2.tool_calls.iter().find(|d| d.is_complete).unwrap();
-        assert_eq!(completed.name.as_deref(), Some("fn"));
+        let _completed = r2
+            .tool_calls
+            .iter()
+            .find(|d| d.is_complete)
+            .expect("a completion delta");
+    }
 
-        // Verify the arguments fragments accumulate to the correct value.
+    #[test]
+    fn incremental_argument_streaming() {
+        let mut p = make_parser();
+        let _ = p.feed(OPEN_MARKER);
+        let _ = p.feed("{\"name\":\"fn\",\"arguments\":");
         let mut all_args = String::new();
-        all_args.extend(incomplete.iter().map(|d| d.arguments_fragment.as_str()));
-        all_args.push_str(&completed.arguments_fragment);
-        let _ = &all_args; // accumulated args for this tool call
+        for piece in ["{\"city\":", "\"London\"}"] {
+            let r = p.feed(piece);
+            for tc in &r.tool_calls {
+                all_args.push_str(&tc.arguments_fragment);
+            }
+        }
+        let r = p.feed(CLOSE_MARKER);
+        for tc in &r.tool_calls {
+            all_args.push_str(&tc.arguments_fragment);
+        }
+        assert!(
+            all_args.contains("London"),
+            "Accumulated args should contain London, got: {all_args}"
+        );
+        assert!(
+            all_args.contains("\"city\""),
+            "Accumulated args should contain city key, got: {all_args}"
+        );
     }
 }

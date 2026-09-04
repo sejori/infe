@@ -1,13 +1,15 @@
 //! Llama-3 JSON tool-call parser.
 //!
-//! Llama-3.1+ models use the built-in tool-call format where the model emits
-//! a JSON object with "name" and "parameters" fields, terminated by the
-//! model's end-of-turn token. This parser detects the opening brace of the
-//! JSON object, streams the parameters as arguments fragments, and emits
-//! a complete delta when the closing brace is seen.
+//! Llama-3.1+ models use a JSON object with "name" and "parameters" fields,
+//! terminated by the model's end-of-turn token. This parser mirrors vLLM's
+//! `llama3_json_tool_parser.py`:
 //!
-//! The `arguments` delta is the value of the "parameters" field (not the
-//! whole JSON object), matching vLLM's `llama3_json_tool_parser.py`.
+//! 1. Detect the opening `{` that starts the JSON object.
+//! 2. Accumulate the JSON body incrementally.
+//! 3. Extract the `name` via regex as soon as it's available — emit name+id.
+//! 4. Extract the `parameters` value (everything after `"parameters":`) and
+//!    compute the diff against what was already sent — emit the diff.
+//! 5. At completion (matching `}`), emit any remaining diff + completion.
 
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::doc_markdown)]
@@ -15,12 +17,9 @@
 use crate::parser::{DialectParser, ParseResult};
 use crate::types::{ToolCallArgState, ToolCallDelta, ToolCallState};
 
-/// Depth of braces seen so far (for nested JSON).
 #[derive(Debug, Default)]
 pub struct Llama3JsonParser {
-    /// Brace depth: 0 = outside JSON, >0 = inside.
     brace_depth: u32,
-    /// Whether we have seen the opening brace and are accumulating.
     accumulating: bool,
 }
 
@@ -30,37 +29,88 @@ impl Llama3JsonParser {
         Self::default()
     }
 
-    /// Extract the `name` field and the `parameters` sub-object from the
-    /// Llama-3 JSON body `{"name":"fn","parameters":{...}}`.
-    ///
-    /// Returns `(name, parameters_json_str)` where `parameters_json_str` is
-    /// the serialised value of the "parameters" field.
-    fn extract_name_and_params(json_str: &str) -> (Option<String>, String) {
-        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(json_str) {
-            let name = obj
-                .get("name")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string);
-            let params = match obj.get("parameters").or_else(|| obj.get("arguments")) {
-                Some(serde_json::Value::String(s)) => s.clone(),
-                Some(v) => v.to_string(),
-                None => "{}".to_string(),
-            };
-            return (name, params);
-        }
-        // Fallback: manual extraction for partial JSON.
+    /// Extract the tool name from a (possibly partial) JSON body.
+    fn extract_name(json_str: &str) -> Option<String> {
         if let Some(name_idx) = json_str.find("\"name\"") {
             let after_key = &json_str[name_idx + 6..];
             if let Some(colon_idx) = after_key.find(':') {
                 let after_colon = after_key[colon_idx + 1..].trim_start();
                 if let Some(rest) = after_colon.strip_prefix('"') {
                     if let Some(end) = rest.find('"') {
-                        return (Some(rest[..end].to_string()), json_str.to_string());
+                        return Some(rest[..end].to_string());
                     }
                 }
             }
         }
-        (None, json_str.to_string())
+        None
+    }
+
+    /// Extract the raw parameters text — everything after `"parameters":`
+    /// (or `"arguments":` as a fallback). When `is_complete`, strips the
+    /// trailing `}` that closes the wrapper.
+    fn extract_params_raw(json_str: &str, is_complete: bool) -> Option<String> {
+        let key = if json_str.contains("\"parameters\"") {
+            "\"parameters\""
+        } else {
+            "\"arguments\""
+        };
+        let idx = json_str.find(key)?;
+        let after_key = &json_str[idx + key.len()..];
+        let colon_idx = after_key.find(':')?;
+        let raw = &after_key[colon_idx + 1..];
+        let mut raw = raw.trim_start().to_string();
+
+        if is_complete {
+            raw = raw.trim_end().to_string();
+            if raw.ends_with('}') {
+                raw.truncate(raw.len() - 1);
+                raw = raw.trim_end().to_string();
+            }
+        }
+        Some(raw)
+    }
+
+    fn is_complete_json(json_str: &str) -> bool {
+        serde_json::from_str::<serde_json::Value>(json_str).is_ok()
+    }
+
+    /// Try to emit incremental name + arg diffs.
+    fn try_emit_incremental(
+        state: &mut ToolCallArgState,
+        json_body: &str,
+        result: &mut ParseResult,
+    ) {
+        let is_complete = Self::is_complete_json(json_body);
+
+        if !state.name_emitted {
+            if let Some(name) = Self::extract_name(json_body) {
+                state.name_emitted = true;
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: state.id.take(),
+                    name: Some(name),
+                    arguments_fragment: String::new(),
+                    is_complete: false,
+                });
+            } else {
+                return;
+            }
+        }
+
+        if let Some(params_raw) = Self::extract_params_raw(json_body, is_complete) {
+            let already = state.last_emitted_args_len;
+            if params_raw.len() > already {
+                let diff = &params_raw[already..];
+                state.last_emitted_args_len = params_raw.len();
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: None,
+                    name: None,
+                    arguments_fragment: diff.to_string(),
+                    is_complete: false,
+                });
+            }
+        }
     }
 }
 
@@ -78,6 +128,10 @@ impl DialectParser for Llama3JsonParser {
                         self.brace_depth = 1;
                         state.begin_tool_call();
                         state.arguments_buffer.push(ch);
+
+                        // Try immediate incremental emission
+                        let buf = state.arguments_buffer.clone();
+                        Self::try_emit_incremental(state, &buf, result);
                     } else {
                         result.content.push(ch.to_string());
                     }
@@ -92,40 +146,56 @@ impl DialectParser for Llama3JsonParser {
                             self.brace_depth -= 1;
                             if self.brace_depth == 0 {
                                 // Complete tool call.
-                                let (name, params) =
-                                    Self::extract_name_and_params(&state.arguments_buffer);
+                                let json_body = state.arguments_buffer.clone();
 
-                                // Compute final arguments diff.
-                                let already = state.last_emitted_args_len.min(params.len());
-                                let args_diff = &params[already..];
+                                // Emit final incremental diffs.
+                                Self::try_emit_incremental(state, &json_body, result);
 
-                                let first_delta = !state.name_emitted;
-                                result.tool_calls.push(ToolCallDelta {
-                                    index: state.index.unwrap_or(0),
-                                    id: state.id.take(),
-                                    name: if first_delta { name } else { None },
-                                    arguments_fragment: args_diff.to_string(),
-                                    is_complete: true,
-                                });
-                                state.name_emitted = true;
-                                state.last_emitted_args_len = params.len();
+                                // Emit completion delta with any remaining args.
+                                if let Some(params_raw) = Self::extract_params_raw(&json_body, true)
+                                {
+                                    let already = state.last_emitted_args_len;
+                                    if params_raw.len() > already {
+                                        let diff = &params_raw[already..];
+                                        result.tool_calls.push(ToolCallDelta {
+                                            index: state.index.unwrap_or(0),
+                                            id: None,
+                                            name: None,
+                                            arguments_fragment: diff.to_string(),
+                                            is_complete: true,
+                                        });
+                                        state.last_emitted_args_len = params_raw.len();
+                                    } else {
+                                        result.tool_calls.push(ToolCallDelta {
+                                            index: state.index.unwrap_or(0),
+                                            id: None,
+                                            name: None,
+                                            arguments_fragment: String::new(),
+                                            is_complete: true,
+                                        });
+                                    }
+                                } else {
+                                    result.tool_calls.push(ToolCallDelta {
+                                        index: state.index.unwrap_or(0),
+                                        id: None,
+                                        name: None,
+                                        arguments_fragment: String::new(),
+                                        is_complete: true,
+                                    });
+                                }
 
                                 state.complete_tool_call();
                                 state.reset_to_idle();
                                 self.accumulating = false;
                             } else {
-                                // Still accumulating inside nested JSON.
-                                // Don't emit intermediate deltas — the
-                                // completion delta sends the extracted value.
+                                // Nested — try incremental emission.
+                                let buf = state.arguments_buffer.clone();
+                                Self::try_emit_incremental(state, &buf, result);
                             }
                         }
                         _ => {
-                            // Accumulating — opportunistically emit diffs.
-                            // We accumulate the raw buffer and compute diffs.
-                            // The completion delta will send the correct
-                            // extracted value.
-                            // Intentionally don't emit partial deltas for
-                            // Llama3 JSON — the body is single-chunk usually.
+                            let buf = state.arguments_buffer.clone();
+                            Self::try_emit_incremental(state, &buf, result);
                         }
                     }
                 }
@@ -147,9 +217,21 @@ impl DialectParser for Llama3JsonParser {
 mod tests {
     use crate::parser::StreamingParser;
     use crate::registry::DialectRegistry;
+    use crate::types::ToolCallDelta;
     fn make_parser() -> StreamingParser {
         let dialect = DialectRegistry::create("llama3_json").unwrap();
         StreamingParser::new(dialect)
+    }
+
+    fn accumulate_args(deltas: &[ToolCallDelta]) -> String {
+        deltas
+            .iter()
+            .map(|d| d.arguments_fragment.as_str())
+            .collect()
+    }
+
+    fn find_name(deltas: &[ToolCallDelta]) -> Option<&str> {
+        deltas.iter().find_map(|d| d.name.as_deref())
     }
 
     #[test]
@@ -169,9 +251,8 @@ mod tests {
         let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
         assert_eq!(completed.len(), 1);
         assert!(completed[0].is_complete);
-        assert_eq!(completed[0].name.as_deref(), Some("get_weather"));
-        // Should extract parameters, not the whole wrapper.
-        let args = &completed[0].arguments_fragment;
+        assert_eq!(find_name(&r.tool_calls).unwrap(), "get_weather");
+        let args = accumulate_args(&r.tool_calls);
         assert!(args.contains("\"London\""));
         assert!(!args.contains("\"name\""));
     }
@@ -181,9 +262,8 @@ mod tests {
         let mut p = make_parser();
         let r = p.feed(r#"{"name":"fn","parameters":{}}"#);
         assert!(!r.tool_calls.is_empty());
-        let first = &r.tool_calls[0];
-        assert!(first.id.is_some());
-        assert!(first.id.as_ref().unwrap().starts_with("call_"));
+        assert!(r.tool_calls[0].id.is_some());
+        assert!(r.tool_calls[0].id.as_ref().unwrap().starts_with("call_"));
     }
 
     #[test]
@@ -194,27 +274,28 @@ mod tests {
         let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].index, 1);
-        assert_eq!(completed[0].name.as_deref(), Some("fn2"));
+        assert_eq!(find_name(&r.tool_calls).unwrap(), "fn2");
     }
 
     #[test]
     fn json_tool_call_streamed() {
         let mut p = make_parser();
         let _r1 = p.feed(r#"{"name":"#);
-        let _r2 = p.feed(r#""get_weather","#);
+        let r_name = p.feed(r#""get_weather","#);
+        // Name should be emitted when the closing quote of the name value arrives
+        assert_eq!(find_name(&r_name.tool_calls).unwrap(), "get_weather");
         let _r3 = p.feed(r#""parameters":{"city":"#);
         let r4 = p.feed(r#""London"}}"#);
         assert!(!r4.tool_calls.is_empty());
-        let completed = r4.tool_calls.iter().find(|d| d.is_complete).unwrap();
-        assert_eq!(completed.name.as_deref(), Some("get_weather"));
     }
 
     #[test]
     fn nested_json_braces() {
         let mut p = make_parser();
         let r = p.feed(r#"{"name":"fn","parameters":{"nested":{"a":1}}}"#);
-        assert_eq!(r.tool_calls.len(), 1);
-        assert!(r.tool_calls[0].is_complete);
+        let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].is_complete);
     }
 
     #[test]
@@ -223,9 +304,31 @@ mod tests {
         let r1 = p.feed("Sure! ");
         assert!(!r1.content.is_empty());
         let r2 = p.feed(r#"{"name":"fn","parameters":{}}"#);
-        assert_eq!(r2.tool_calls.len(), 1);
-        assert!(r2.tool_calls[0].is_complete);
+        let completed: Vec<_> = r2.tool_calls.iter().filter(|d| d.is_complete).collect();
+        assert_eq!(completed.len(), 1);
+        assert!(completed[0].is_complete);
         let r3 = p.feed(" Done.");
         assert!(!r3.content.is_empty());
+    }
+
+    #[test]
+    fn incremental_argument_streaming() {
+        let mut p = make_parser();
+        let _ = p.feed(r#"{"name":"fn","parameters":"#);
+        let mut all_args = String::new();
+        for piece in [r#"{"city":"#, r#""London"}}"#] {
+            let r = p.feed(piece);
+            for tc in &r.tool_calls {
+                all_args.push_str(&tc.arguments_fragment);
+            }
+        }
+        assert!(
+            all_args.contains("London"),
+            "Accumulated args should contain London, got: {all_args}"
+        );
+        assert!(
+            all_args.contains("\"city\""),
+            "Accumulated args should contain city key, got: {all_args}"
+        );
     }
 }

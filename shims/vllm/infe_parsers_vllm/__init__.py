@@ -124,14 +124,19 @@ class InfeToolParser(ToolParser):
     def extract_tool_calls(
         self, model_output: str, request: ChatCompletionRequest
     ) -> ExtractedToolCallInformation:
-        """Non-streaming: feed the entire model output and collect results."""
+        """Non-streaming: feed the entire model output and collect results.
+
+        With incremental streaming, arguments are emitted as multiple
+        diff fragments across deltas. We accumulate by index and also
+        collect the name (which appears on the first delta for each call).
+        """
         self._ensure_parser()
         self._rust_parser.reset()
 
         result = self._rust_parser.feed(model_output)
         finish_result = self._rust_parser.finish()
 
-        # Merge
+        # Merge all deltas.
         all_tool_calls = list(result.get("tool_calls", []))
         all_tool_calls.extend(finish_result.get("tool_calls", []))
         all_content = list(result.get("content", []))
@@ -144,11 +149,19 @@ class InfeToolParser(ToolParser):
                 content=model_output,
             )
 
-        tool_calls = []
+        # Accumulate by index: name from first delta, args from all fragments.
+        acc: dict[int, dict] = {}
         for tc in all_tool_calls:
-            if not tc.get("is_complete"):
-                continue
-            args_str = tc.get("arguments_fragment", "{}")
+            idx = tc.get("index", 0)
+            entry = acc.setdefault(idx, {"name": "", "args": ""})
+            if tc.get("name"):
+                entry["name"] = tc["name"]
+            entry["args"] += tc.get("arguments_fragment", "")
+
+        tool_calls = []
+        for idx in sorted(acc):
+            entry = acc[idx]
+            args_str = entry["args"] or "{}"
             try:
                 args_json = json.loads(args_str)
             except (json.JSONDecodeError, TypeError):
@@ -157,7 +170,7 @@ class InfeToolParser(ToolParser):
                 ToolCall(
                     type="function",
                     function=FunctionCall(
-                        name=tc.get("name") or "",
+                        name=entry["name"],
                         arguments=json.dumps(args_json, ensure_ascii=False),
                     ),
                 )

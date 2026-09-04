@@ -4,16 +4,22 @@
 //! them through a `StreamingParser`, asserting the accumulated output
 //! matches the expected deltas.
 //!
-//! Each fixture specifies:
-//! - `input_chunks`: the text chunks to feed (simulating per-token deltas)
-//! - `expected_tool_calls`: completed tool calls with name, arguments, index
-//! - `expected_content`: exact content strings (not substring match)
-//! - `expected_reasoning`: reasoning deltas
+//! With incremental argument streaming (matching vLLM/SGLang stock
+//! behaviour), a single tool call may produce multiple deltas:
+//! - First delta: name + id (no arguments)
+//! - Subsequent deltas: argument fragments (diffs)
+//! - Final delta: any remaining argument diff + `is_complete=true`
 //!
-//! Run with: `cargo test --test conformance`
+//! The runner accumulates by tool-call index and asserts:
+//! - Name matches (collected from any delta for that index)
+//! - ID present on the first delta for each index
+//! - Accumulated arguments fragments match expected value
+//! - Index matches
+//! - Completion is flagged
 
 use infe_parsers::{DialectRegistry, StreamingParser};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -54,6 +60,16 @@ struct ExpectedReasoning {
     is_complete: bool,
 }
 
+/// Accumulated state for one tool call across multiple deltas.
+#[derive(Default)]
+struct AccumulatedToolCall {
+    index: usize,
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
+    is_complete: bool,
+}
+
 fn load_fixtures() -> Vec<Fixture> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -63,7 +79,6 @@ fn load_fixtures() -> Vec<Fixture> {
         .join("parsers");
 
     let mut fixtures = Vec::new();
-
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -76,10 +91,10 @@ fn load_fixtures() -> Vec<Fixture> {
             }
         }
     }
-
     fixtures
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_fixture(fixture: &Fixture) {
     let dialect = DialectRegistry::create(&fixture.dialect).unwrap_or_else(|e| {
         panic!(
@@ -90,37 +105,65 @@ fn run_fixture(fixture: &Fixture) {
 
     let mut parser = StreamingParser::new(dialect);
 
-    // Accumulate deltas across all feed calls and the final finish.
-    let mut all_tool_calls = Vec::new();
     let mut all_reasoning = Vec::new();
     let mut all_content = Vec::new();
 
+    // Accumulate tool-call deltas by index across all feed calls.
+    let mut acc: BTreeMap<usize, AccumulatedToolCall> = BTreeMap::new();
+
     for chunk in &fixture.input_chunks {
         let r = parser.feed(chunk);
-        all_tool_calls.extend(r.tool_calls);
+        for tc in &r.tool_calls {
+            let entry = acc.entry(tc.index).or_default();
+            entry.index = tc.index;
+            if tc.id.is_some() {
+                entry.id.clone_from(&tc.id);
+            }
+            if tc.name.is_some() {
+                entry.name.clone_from(&tc.name);
+            }
+            entry.arguments.push_str(&tc.arguments_fragment);
+            if tc.is_complete {
+                entry.is_complete = true;
+            }
+        }
         all_reasoning.extend(r.reasoning);
         all_content.extend(r.content);
     }
     let r = parser.finish();
-    all_tool_calls.extend(r.tool_calls);
+    for tc in &r.tool_calls {
+        let entry = acc.entry(tc.index).or_default();
+        entry.index = tc.index;
+        if tc.id.is_some() {
+            entry.id.clone_from(&tc.id);
+        }
+        if tc.name.is_some() {
+            entry.name.clone_from(&tc.name);
+        }
+        entry.arguments.push_str(&tc.arguments_fragment);
+        if tc.is_complete {
+            entry.is_complete = true;
+        }
+    }
     all_reasoning.extend(r.reasoning);
     all_content.extend(r.content);
 
-    // Check tool calls: only count completed ones
-    let completed: Vec<_> = all_tool_calls.iter().filter(|t| t.is_complete).collect();
+    // Collect into sorted-by-index vector.
+    let completed: Vec<_> = acc.into_values().collect();
+
     assert_eq!(
         completed.len(),
         fixture.expected_tool_calls.len(),
-        "{}: expected {} completed tool calls, got {}",
+        "{}: expected {} tool calls, got {}",
         fixture.name,
         fixture.expected_tool_calls.len(),
         completed.len()
     );
 
     for (i, expected) in fixture.expected_tool_calls.iter().enumerate() {
-        let actual = completed[i];
+        let actual = &completed[i];
 
-        // Assert name (if specified)
+        // Assert name (if specified).
         if let Some(ref name) = expected.name {
             assert_eq!(
                 actual.name.as_deref(),
@@ -131,19 +174,16 @@ fn run_fixture(fixture: &Fixture) {
             );
         }
 
-        // Assert arguments (if specified) — must be exact equality,
-        // not substring match. This catches defect #1 (wrapper JSON
-        // instead of arguments sub-object).
+        // Assert accumulated arguments (if specified).
         if let Some(ref args) = expected.arguments {
             assert_eq!(
-                actual.arguments_fragment, *args,
-                "{}: tool call {} arguments mismatch",
+                actual.arguments, *args,
+                "{}: tool call {} accumulated arguments mismatch",
                 fixture.name, i
             );
         }
 
-        // Assert index (if specified) — catches defect #6 (index not
-        // auto-incremented for multiple calls).
+        // Assert index (if specified).
         if let Some(expected_index) = expected.index {
             assert_eq!(
                 actual.index, expected_index,
@@ -152,7 +192,7 @@ fn run_fixture(fixture: &Fixture) {
             );
         }
 
-        // Assert every completed tool call has an id (defect #3).
+        // Assert every tool call has an id.
         assert!(
             actual.id.is_some(),
             "{}: tool call {} should have a tool-call id",
@@ -161,32 +201,31 @@ fn run_fixture(fixture: &Fixture) {
         );
     }
 
-    // Check reasoning
+    // Check reasoning.
     if !fixture.expected_reasoning.is_empty() {
-        let actual_reasoning: Vec<_> = all_reasoning.iter().collect();
         assert_eq!(
-            actual_reasoning.len(),
+            all_reasoning.len(),
             fixture.expected_reasoning.len(),
             "{}: expected {} reasoning deltas, got {}",
             fixture.name,
             fixture.expected_reasoning.len(),
-            actual_reasoning.len()
+            all_reasoning.len()
         );
         for (i, expected) in fixture.expected_reasoning.iter().enumerate() {
             assert_eq!(
-                actual_reasoning[i].fragment, expected.fragment,
+                all_reasoning[i].fragment, expected.fragment,
                 "{}: reasoning {} fragment mismatch",
                 fixture.name, i
             );
             assert_eq!(
-                actual_reasoning[i].is_complete, expected.is_complete,
+                all_reasoning[i].is_complete, expected.is_complete,
                 "{}: reasoning {} is_complete mismatch",
                 fixture.name, i
             );
         }
     }
 
-    // Check content — use equality, not contains, for exact matching.
+    // Check content.
     if !fixture.expected_content.is_empty() {
         let joined: String = all_content.join("");
         for expected in &fixture.expected_content {
@@ -205,7 +244,6 @@ fn run_fixture(fixture: &Fixture) {
 fn conformance_all_fixtures() {
     let fixtures = load_fixtures();
     assert!(!fixtures.is_empty(), "no conformance fixtures found");
-
     for fixture in &fixtures {
         run_fixture(fixture);
     }

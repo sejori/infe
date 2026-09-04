@@ -91,7 +91,11 @@ class InfeDetector(BaseFormatDetector):
     def detect_and_parse(
         self, text: str, tools: list[Tool]
     ) -> StreamingParseResult:
-        """One-shot parse of the full text."""
+        """One-shot parse of the full text.
+
+        With incremental streaming, arguments are emitted as multiple diff
+        fragments across deltas. We accumulate by index.
+        """
         self._ensure_parser()
         self._rust_parser.reset()
 
@@ -107,16 +111,25 @@ class InfeDetector(BaseFormatDetector):
             return StreamingParseResult(normal_text=text)
 
         tool_indices = self._get_tool_indices(tools)
-        calls = []
+        # Accumulate by index: name from first delta, args from all fragments.
+        acc: dict[int, dict] = {}
+        completed: set[int] = set()
         for tc in all_tool_calls:
-            if not tc.get("is_complete"):
+            idx = tc.get("index", 0)
+            entry = acc.setdefault(idx, {"name": "", "args": ""})
+            if tc.get("name"):
+                entry["name"] = tc["name"]
+            entry["args"] += tc.get("arguments_fragment", "")
+            if tc.get("is_complete"):
+                completed.add(idx)
+
+        calls = []
+        for idx in sorted(acc):
+            if idx not in completed:
                 continue
-            name = tc.get("name") or ""
-            # The arguments_fragment is now the extracted arguments
-            # sub-object (not the wrapper JSON), so use it directly.
-            args_str = tc.get("arguments_fragment", "{}")
-            if not args_str:
-                args_str = "{}"
+            entry = acc[idx]
+            name = entry["name"]
+            args_str = entry["args"] or "{}"
             try:
                 args_json = json.loads(args_str)
             except (json.JSONDecodeError, TypeError):
