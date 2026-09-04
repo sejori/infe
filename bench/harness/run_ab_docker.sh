@@ -8,14 +8,15 @@ MODEL=${MODEL:-Qwen/Qwen2.5-1.5B-Instruct}; PORT=${PORT:-8000}; ROUNDS=${ROUNDS:
 B=${INFE_BENCH_DIR:-$HOME/infe-bench}; HF=$B/hf; SHIMS=$B/shims
 NAME=infe-$ENGINE-$ARM; OUT=$B/results/${ENGINE}_${ARM}_$(date +%Y%m%d-%H%M%S).json
 docker rm -f $NAME >/dev/null 2>&1 || true
-COMMON=(--name $NAME --gpus "device=$GPU" --ipc=host -p 127.0.0.1:$PORT:8000 -v $HF:/hf -e HF_HOME=/hf -v $B/wheels:/wheels:ro -v $SHIMS:/shims:ro -e HF_HUB_OFFLINE=1)
+REPO=${INFE_REPO:-$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || echo $HOME/infe)}
+COMMON=(--name $NAME --gpus "device=$GPU" --ipc=host -p 127.0.0.1:$PORT:8000 -v $HF:/hf -e HF_HOME=/hf -v $B/wheels:/wheels:ro -v $REPO/shims:/shims:ro -e HF_HUB_OFFLINE=1)
 if [ $ENGINE = vllm ]; then
   IMG=vllm/vllm-openai:latest
   ARGS=($MODEL --port 8000 --max-model-len 4096 --gpu-memory-utilization 0.85 --enable-auto-tool-choice)
   if [ $ARM = stock ]; then
     docker run -d "${COMMON[@]}" $IMG "${ARGS[@]}" --tool-call-parser hermes >/dev/null
   else
-    docker run -d "${COMMON[@]}" --entrypoint bash $IMG -c "pip install -q /wheels/*.whl && python3 -c 'import infe_parsers; print(\"infe_parsers\", infe_parsers.__version__)' && exec vllm serve ${ARGS[*]} --tool-call-parser infe_hermes --tool-parser-plugin /shims/vllm_shim.py" >/dev/null
+    docker run -d "${COMMON[@]}" --entrypoint bash $IMG -c "pip install -q /wheels/*.whl && python3 -c 'import infe_parsers; print(\"infe_parsers\", infe_parsers.__version__)' && exec env PYTHONPATH=/shims/vllm vllm serve ${ARGS[*]} --tool-call-parser infe_hermes --tool-parser-plugin /shims/vllm/infe_parsers_vllm/__init__.py"  # 0.28 import_tool_parser() takes a FILE path only; main also accepts a module name >/dev/null
   fi
 else
   IMG=lmsysorg/sglang:latest
@@ -23,7 +24,7 @@ else
   if [ $ARM = stock ]; then
     docker run -d "${COMMON[@]}" $IMG python3 -m sglang.launch_server "${ARGS[@]}" --tool-call-parser qwen25 >/dev/null
   else
-    docker run -d "${COMMON[@]}" $IMG bash /shims/launch_sglang.sh "${ARGS[@]}" --tool-call-parser infe_hermes >/dev/null
+    docker run -d "${COMMON[@]}" -e PYTHONPATH=/shims/sglang $IMG bash -c "pip install -q /wheels/*.whl && exec python3 -m infe_parsers_sglang.launch ${ARGS[*]} --tool-call-parser infe_hermes" >/dev/null
   fi
 fi
 echo "waiting for $NAME on :$PORT"; for i in $(seq 1 180); do curl -sf http://127.0.0.1:$PORT/v1/models >/dev/null 2>&1 && break; sleep 2; done

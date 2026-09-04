@@ -95,12 +95,12 @@ class InfeToolParser(ToolParser):
                 function_kwargs["name"] = tc["name"]
             if tc.get("arguments_fragment"):
                 function_kwargs["arguments"] = tc["arguments_fragment"]
-            if tc.get("id"):
-                function_kwargs["id"] = tc["id"]
-
+            # The id belongs on DeltaToolCall, not DeltaFunctionCall (pydantic silently
+            # drops unknown kwargs there, which is why streamed deltas had no id).
             delta_tool_calls.append(
                 DeltaToolCall(
                     index=tc.get("index", 0),
+                    id=tc.get("id") or None,
                     type="function",
                     function=DeltaFunctionCall(**function_kwargs).model_dump(
                         exclude_none=True
