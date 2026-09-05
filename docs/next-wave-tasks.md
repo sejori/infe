@@ -1,12 +1,20 @@
 # Next-wave task list (handoff, 2026-09-04) — updated after round 2
 
-**Round-2 status (see review, "Round 2"):** A1–A5, B1, B3, B4 done. **B2 (incremental argument streaming) is NOT done** and
-blocks every performance number. New items: B6, B7, A6, D5 below. One uncommitted fix in the working tree:
-`shims/vllm/infe_parsers_vllm/__init__.py` (id moved from `DeltaFunctionCall` to `DeltaToolCall`).
+**Round-3 status (see review, "Round 3"):** A1–A6, B1–B4 done. **vLLM is at full output parity with stock and
+shows ITL p99 -18/-19% with no regression elsewhere.** Remaining, all small and all in the SGLang path or in
+measurement:
 
-Source of truth for *why*: `docs/review-2026-09-04.md`. This file is the *what*, ordered, with acceptance checks.
-Working fixes exist only as scratch copies under `bench/results/rtx4090-20260904/scratch/`; nothing in
-`crates/`, `python/` or `shims/` has been changed yet.
+| # | Where | What |
+|---|---|---|
+| **B8** | `shims/sglang/infe_parsers_sglang/__init__.py` | **Blocker.** `parse_streaming_increment` drops every nameless argument fragment (`elif name:`). Since B2 emits the name only on the first delta, SGLang now gets 2 deltas/call instead of ~5 and ITL p99 is 90-98% *worse* than stock. Forward nameless fragments as `ToolCallItem(tool_index=<index of the open call>, name=None, parameters=frag)`; SGLang's `_process_tool_call_stream` already treats `name is None` as an argument delta. Track the open call's `tool_index` on the detector rather than resolving it by name each time. |
+| **B6** | `crates/infe-parsers/src/dialects/hermes.rs` | Still open. Marker-less continuation calls: after a completed `</tool_call>`, Qwen2.5 under SGLang's template emits the next call as bare JSON with no opener, plus a stray `}`. Stock parsers absorb it; infe streams it as content, so SGLang sees 1 call per request instead of 2. |
+| **B7** | `crates/infe-parsers/src/types.rs` | Still open. Ids are index-derived, so every request's first call gets the same id. Use a random generator (vLLM: `chatcmpl-tool-<16 hex>`), seedable for tests. |
+| **D4** | `bench/harness/run_ab_docker.sh` | **Required before any CPU claim.** Replace docker-stats sampling (2-4 samples/run) with a 1 s psutil sampler on the API-server pid inside the container. |
+| **D6** | bench protocol | Round 3 showed infe emits ~10-34% *more* deltas than stock on vLLM, which mechanically lowers ITL. Record deltas-per-request per arm and either normalise ITL by delta count or add a fixed-delta-count workload, so the next latency claim is not confounded. |
+| **C** | conformance | Unchanged and still the biggest gap: 6 synthetic fixtures. Mine from `vllm/tests/tool_use` and `sglang/test/srt/function_call`; add multi-call, marker-less-continuation and split-marker cases (these would have caught #6, #7 and #8). |
+
+Acceptance for the next round: SGLang `calls == 2 x requests` and `args_ok == calls`, SGLang ITL p99 within noise
+of stock, and a psutil CPU trace for all four arms.
 
 ## A. Make the infe arms run at all (engine-side, small)
 
