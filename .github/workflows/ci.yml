@@ -71,7 +71,6 @@ jobs:
         run: maturin build --release
 
       - name: Install wheel and test import
-        working-directory: python/infe-parsers
         run: |
           pip install target/wheels/*.whl --force-reinstall
           python -c "from infe_parsers import StreamingParser, list_dialects, list_tool_dialects, list_reasoning_dialects, dialect_kind; p = StreamingParser('hermes'); print(list_dialects()); print(list_tool_dialects()); print(list_reasoning_dialects()); print(dialect_kind('hermes'), dialect_kind('deepseek_reasoning'))"
@@ -80,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: infe-parsers-wheel
-          path: python/infe-parsers/target/wheels/*.whl
+          path: target/wheels/*.whl
           retention-days: 30
 
   bench:
@@ -137,7 +136,6 @@ jobs:
         run: cargo test --test conformance
 
       - name: Install wheel
-        working-directory: python/infe-parsers
         run: pip install target/wheels/*.whl --force-reinstall
 
       - name: Verify shim syntax
