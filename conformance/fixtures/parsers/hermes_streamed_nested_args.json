@@ -1,0 +1,22 @@
+{
+  "name": "hermes_streamed_nested_args",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Tool call with nested JSON arguments streamed token-by-token — tests incremental arg diff with nested braces",
+  "input_chunks": [
+    "\u003ctool_call\u003e",
+    "{\"name\":\"create_event\",\"arguments\":",
+    "{\"title\":\"Meeting\",\"attendees\":[\"alice\",\"bob\"],\"location\":{\"building\":\"HQ\",\"room\":\"301\"}}}",
+    "\u003c/tool_call\u003e"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "create_event",
+      "arguments": "{\"title\":\"Meeting\",\"attendees\":[\"alice\",\"bob\"],\"location\":{\"building\":\"HQ\",\"room\":\"301\"}}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

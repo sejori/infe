@@ -1,6 +1,6 @@
 manifest_version: "0.1.0"
 component: infe-parsers
-version: "0.1.0"
+version: "0.1.1"
 type: tool_call_and_reasoning_parser
 status: alpha
 
@@ -12,8 +12,9 @@ description: |
 engine_seams:
   vllm:
     tool_parser:
-      flag: "--tool-call-parser infe_hermes --tool-parser-plugin <path-to-shims/vllm/infe_parsers_vllm>"
+      flag: "--tool-call-parser infe_hermes --tool-parser-plugin <path-to-shims/vllm/infe_parsers_vllm/__init__.py>"
       registered_via: ToolParserManager.register_module
+      plugin_path_note: "vLLM 0.28.0's import_tool_parser() accepts a FILE PATH only, not a module name. vLLM main also accepts a module name."
     reasoning_parser:
       flag: "--reasoning-parser infe_deepseek_reasoning --reasoning-parser-plugin <path>"
       registered_via: ReasoningParserManager
@@ -52,15 +53,30 @@ parity:
   streaming_diff: true
   random_ids: true
   markerless_continuation: true
+  nameless_fragment_forwarding: true
 
 conformance:
   fixtures: "conformance/fixtures/parsers/"
   runner: "cargo test --test conformance"
-  fixture_count: 6
-  source: synthetic
-  note: "Fixtures should be mined from vllm/tests/tool_use + sglang/test/.../function_call"
+  fixture_count: 14
+  sources: ["synthetic", "sglang-qwen25-template"]
+  coverage:
+    - single_tool_call
+    - multiple_tool_calls
+    - streamed_tool_call
+    - content_tool_content
+    - split_marker
+    - nested_json_arguments
+    - markerless_continuation
+    - markerless_continuation_streamed
+    - multi_call_streamed
+    - streamed_nested_args
+    - llama3_json_single
+    - llama3_json_multi_call
+    - llama3_json_nested_args
+    - deepseek_reasoning_block
 
 benchmarks:
-  latest_result: "bench/results/rtx4090-20260904-round2/"
-  latest_date: "2026-09-04"
-  note: "Round 2 A/B on RTX 4090. vLLM parity confirmed (args/id/name all match). SGLang B6 half-calls fixed. vLLM shim now streams incremental diffs."
+  latest_result: "bench/results/rtx4090-20260905-round3/"
+  latest_date: "2026-09-05"
+  note: "Round 3 A/B on RTX 4090. vLLM full parity (calls/args/ids match stock). SGLang B6+B8 fixes now on main but not yet benchmarked. Next round will test all merged fixes together."

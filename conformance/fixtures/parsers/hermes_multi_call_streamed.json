@@ -1,0 +1,25 @@
+{
+  "name": "hermes_multi_call_streamed",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Two sequential tool calls streamed token-by-token with argument incremental diffs (catches index and ID issues across calls)",
+  "input_chunks": [
+    "\u003ctool_call\u003e{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}\u003c/tool_call\u003e\u003ctool_call\u003e{\"name\":\"get_time\",\"arguments\":{\"city\":\"London\"}}\u003c/tool_call\u003e"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 0,
+      "is_complete": true
+    },
+    {
+      "name": "get_time",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 1,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

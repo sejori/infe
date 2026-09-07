@@ -1,0 +1,19 @@
+{
+  "name": "llama3_json_nested_args",
+  "dialect": "llama3_json",
+  "source": "synthetic",
+  "description": "Llama-3 JSON tool call with nested objects and arrays in parameters",
+  "input_chunks": [
+    "{\"name\":\"search\",\"parameters\":{\"query\":\"rust streaming\",\"filters\":{\"lang\":\"en\",\"date\":\"2024\"},\"options\":[\"safe\",\"verbose\"]}}"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "search",
+      "arguments": "{\"query\":\"rust streaming\",\"filters\":{\"lang\":\"en\",\"date\":\"2024\"},\"options\":[\"safe\",\"verbose\"]}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

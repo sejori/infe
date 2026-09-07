@@ -1,0 +1,25 @@
+{
+  "name": "hermes_markerless_continuation",
+  "dialect": "hermes",
+  "source": "sglang-qwen25-template",
+  "description": "Second call emitted as bare JSON after completed first call — no open marker (B6 scenario from SGLang)",
+  "input_chunks": [
+    "\u003ctool_call\u003e{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}\u003c/tool_call\u003e{\"name\":\"get_time\",\"arguments\":{\"city\":\"London\"}}"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 0,
+      "is_complete": true
+    },
+    {
+      "name": "get_time",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 1,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

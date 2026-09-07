@@ -1,0 +1,24 @@
+{
+  "name": "hermes_split_marker",
+  "dialect": "hermes",
+  "source": "synthetic",
+  "description": "Open marker split across chunk boundary, close marker also split — tests partial-marker buffering",
+  "input_chunks": [
+    "I'll check the weather. <to",
+    "ol_call>{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\"}}<",
+    "/tool_call> Done."
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Paris\"}",
+      "index": 0,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": [
+    "I'll check the weather. ",
+    " Done."
+  ]
+}

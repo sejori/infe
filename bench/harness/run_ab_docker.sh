@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Drive one arm (stock|infe) of one engine (vllm|sglang) in Docker on a chosen GPU, run the
-# e2e client, snapshot container CPU, tear down. Any Linux host with Docker + the NVIDIA container toolkit. Layout under $INFE_BENCH_DIR (default ~/infe-bench): hf/ wheels/ shims/ results/ plus this script and e2e_tool_stream.py.
+# e2e client, snapshot container CPU, tear down. Any Linux host with Docker + the NVIDIA container toolkit.
+# Layout under $INFE_BENCH_DIR (default ~/infe-bench): hf/ wheels/ shims/ results/ plus this script
+# and e2e_tool_stream.py and cpu_sampler.py.
 # Usage: INFE_BENCH_DIR=... PORT=18000 ROUNDS=3 run_ab_docker.sh <engine> <arm> <gpu> [concurrency list...]
 set -euo pipefail
 ENGINE=$1; ARM=$2; GPU=$3; shift 3; CONC=${*:-"8 64 256"}
 MODEL=${MODEL:-Qwen/Qwen2.5-1.5B-Instruct}; PORT=${PORT:-8000}; ROUNDS=${ROUNDS:-3}
 B=${INFE_BENCH_DIR:-$HOME/infe-bench}; HF=$B/hf; SHIMS=$B/shims
 NAME=infe-$ENGINE-$ARM; OUT=$B/results/${ENGINE}_${ARM}_$(date +%Y%m%d-%H%M%S).json
+HARNESS="$(cd "$(dirname "$0")" && pwd)"
 docker rm -f $NAME >/dev/null 2>&1 || true
 REPO=${INFE_REPO:-$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd || echo $HOME/infe)}
 COMMON=(--name $NAME --gpus "device=$GPU" --ipc=host -p 127.0.0.1:$PORT:8000 -v $HF:/hf -e HF_HOME=/hf -v $B/wheels:/wheels:ro -v $REPO/shims:/shims:ro -e HF_HUB_OFFLINE=1)
@@ -30,10 +33,12 @@ fi
 echo "waiting for $NAME on :$PORT"; for i in $(seq 1 180); do curl -sf http://127.0.0.1:$PORT/v1/models >/dev/null 2>&1 && break; sleep 2; done
 curl -sf http://127.0.0.1:$PORT/v1/models >/dev/null || { echo "server failed to start"; docker logs --tail 60 $NAME; docker rm -f $NAME; exit 1; }
 docker logs $NAME 2>&1 | grep -iE "infe|version|Registered" | head -5 || true
-# CPU sampler: docker stats every 2s during the run
-( while docker ps -q -f name=$NAME >/dev/null 2>&1 && [ -f $B/results/.running-$NAME ]; do docker stats --no-stream --format "{{.CPUPerc}}" $NAME 2>/dev/null; sleep 2; done ) > ${OUT%.json}.cpu.txt &
+# D4: CPU sampler using /proc/PID/stat at 1s intervals (replaces docker stats)
+python3 "$HARNESS/cpu_sampler.py" --container-name $NAME --output ${OUT%.json}.cpu.txt --interval 1.0 &
+SAMPLER_PID=$!
 touch $B/results/.running-$NAME
-python3 $B/e2e_tool_stream.py --base-url http://127.0.0.1:$PORT --model $MODEL --arm $ARM --engine $ENGINE --concurrency $CONC --requests $ROUNDS --output $OUT
-rm -f $B/results/.running-$NAME; sleep 3
-echo "cpu samples: $(wc -l < ${OUT%.json}.cpu.txt)  mean: $(sed 's/%//' ${OUT%.json}.cpu.txt | awk '{s+=$1;n++} END{if(n) printf "%.0f%%", s/n}')"
+python3 "$HARNESS/e2e_tool_stream.py" --base-url http://127.0.0.1:$PORT --model $MODEL --arm $ARM --engine $ENGINE --concurrency $CONC --requests $ROUNDS --output $OUT
+rm -f $B/results/.running-$NAME; sleep 1
+wait $SAMPLER_PID 2>/dev/null || true
+echo "cpu samples: $(wc -l < ${OUT%.json}.cpu.txt)  mean: $(sed 's/%//' ${OUT%.json}.cpu.txt 2>/dev/null | awk '{s+=$1;n++} END{if(n) printf "%.0f%%", s/n; else print "N/A"}')"
 docker rm -f $NAME >/dev/null; echo "done -> $OUT"

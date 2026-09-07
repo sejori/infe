@@ -61,6 +61,12 @@ class InfeDetector(BaseFormatDetector):
     def __init__(self, tokenizer=None):
         super().__init__()
         self._rust_parser: RustStreamingParser | None = None
+        # B8: Track the tool_index and name of the currently-open tool call
+        # so nameless argument-fragment deltas can be forwarded with the
+        # correct index.  SGLang's _process_tool_call_stream treats
+        # name is None as "argument delta for the call at tool_index".
+        self._open_tool_index: int = -1
+        self._open_tool_name: str | None = None
         if tokenizer is not None:
             self.model_tokenizer = tokenizer
         # Set bot/eot tokens from the dialect for SGLang's has_tool_call().
@@ -148,7 +154,18 @@ class InfeDetector(BaseFormatDetector):
     def parse_streaming_increment(
         self, new_text: str, tools: list[Tool]
     ) -> StreamingParseResult:
-        """Streaming incremental parse."""
+        """Streaming incremental parse.
+
+        B8 fix: nameless argument-fragment deltas (no name field) are
+        now forwarded as ToolCallItem(tool_index=<open call>, name=None,
+        parameters=frag).  Previously they were silently dropped by the
+        elif name: guard, causing SGLang to receive only 2 deltas per
+        call instead of ~5 and inflating ITL p99 by 90-98%.
+
+        SGLang's _process_tool_call_stream already handles
+        call_item.name is None as an argument delta for the call at
+        tool_index, so no SGLang-side change is needed.
+        """
         self._ensure_parser()
         result = self._rust_parser.feed(new_text)
 
@@ -159,27 +176,62 @@ class InfeDetector(BaseFormatDetector):
         tool_indices = self._get_tool_indices(tools)
         calls = []
         for tc in tool_calls:
-            name = tc.get("name") or ""
+            name = tc.get("name")
             args_frag = tc.get("arguments_fragment", "")
             idx = tc.get("index", 0)
-            if tc.get("is_complete"):
-                # Complete call: send name + full arguments
+            is_complete = tc.get("is_complete", False)
+
+            if is_complete:
+                # Complete call: send name + full arguments.
+                # Resolve tool_index from the name if we have one,
+                # otherwise from the open-call tracker.
+                resolved_name = name or self._open_tool_name
+                resolved_idx = idx
+                if resolved_name and resolved_name in tool_indices:
+                    resolved_idx = tool_indices[resolved_name]
+                elif name and name in tool_indices:
+                    resolved_idx = tool_indices[name]
+                else:
+                    resolved_idx = idx
+
                 calls.append(
                     ToolCallItem(
-                        tool_index=tool_indices.get(name, -1) if name else idx,
-                        name=name if name else None,
+                        tool_index=resolved_idx,
+                        name=resolved_name,
                         parameters=args_frag if args_frag else "{}",
                     )
                 )
-            elif name:
-                # Incomplete but has a name — stream arguments fragments
+                # Reset the open-call tracker.
+                self._open_tool_index = -1
+                self._open_tool_name = None
+            elif name is not None:
+                # First delta for this call: carries name (+ id on the Rust
+                # side).  Record the tool_index so subsequent nameless
+                # arg-fragment deltas can be forwarded correctly.
+                resolved_idx = tool_indices.get(name, idx)
+                self._open_tool_index = resolved_idx
+                self._open_tool_name = name
                 calls.append(
                     ToolCallItem(
-                        tool_index=tool_indices.get(name, -1),
+                        tool_index=resolved_idx,
                         name=name,
                         parameters=args_frag,
                     )
                 )
+            else:
+                # B8: nameless argument-fragment delta.  Forward it with
+                # name=None so SGLang treats it as an argument delta for
+                # the currently-open call at _open_tool_index.
+                if self._open_tool_index >= 0:
+                    calls.append(
+                        ToolCallItem(
+                            tool_index=self._open_tool_index,
+                            name=None,
+                            parameters=args_frag,
+                        )
+                    )
+                # If no call is open, drop the fragment (shouldn't happen
+                # in well-formed streams, but guard against it).
 
         normal_text = "".join(content_parts) if content_parts else ""
         return StreamingParseResult(normal_text=normal_text, calls=calls)
@@ -205,6 +257,9 @@ class InfeDetector(BaseFormatDetector):
 
         content_parts = result.get("content", [])
         normal_text = "".join(content_parts) if content_parts else ""
+        # Reset the open-call tracker.
+        self._open_tool_index = -1
+        self._open_tool_name = None
         return StreamingParseResult(normal_text=normal_text)
 
 

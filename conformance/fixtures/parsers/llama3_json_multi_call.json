@@ -1,0 +1,25 @@
+{
+  "name": "llama3_json_multi_call",
+  "dialect": "llama3_json",
+  "source": "synthetic",
+  "description": "Two consecutive Llama-3 JSON tool calls in one chunk",
+  "input_chunks": [
+    "{\"name\":\"get_weather\",\"parameters\":{\"city\":\"London\"}}{\"name\":\"get_time\",\"parameters\":{\"city\":\"London\"}}"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 0,
+      "is_complete": true
+    },
+    {
+      "name": "get_time",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 1,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}

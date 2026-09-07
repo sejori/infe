@@ -1,0 +1,26 @@
+{
+  "name": "hermes_markerless_continuation_streamed",
+  "dialect": "hermes",
+  "source": "sglang-qwen25-template",
+  "description": "Marker-less second call streamed token-by-token across multiple feed() calls (B6)",
+  "input_chunks": [
+    "\u003ctool_call\u003e{\"name\":\"get_weather\",\"arguments\":{\"city\":\"London\"}}\u003c/tool_call\u003e",
+    "{\"name\":\"get_time\",\"arguments\":{\"city\":\"London\"}}"
+  ],
+  "expected_tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 0,
+      "is_complete": true
+    },
+    {
+      "name": "get_time",
+      "arguments": "{\"city\":\"London\"}",
+      "index": 1,
+      "is_complete": true
+    }
+  ],
+  "expected_reasoning": [],
+  "expected_content": []
+}
