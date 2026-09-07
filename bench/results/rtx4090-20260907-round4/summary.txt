@@ -1,0 +1,51 @@
+engine  arm    conc  ttft_p50  itl_p50  itl_p99  e2e_p50 chunks/s  cpu%  err calls args_ok has_id deltas/req
+sglang  infe      8      78.3     5.17     36.4      275      789    16    0    48       0     48       24.2
+sglang  infe     64     227.2     9.49     66.2      588     2917    16    0   384       0    384       24.4
+sglang  infe    256     618.8    15.32     63.9     1157     5760    16    0  1536       0   1536       24.4
+sglang  stock     8      77.8     5.36     46.5      274      327    28    0    48      48     48       10.2
+sglang  stock    64     216.4    11.24     88.5      588     1219    28    0   384     384    384       10.4
+sglang  stock   256     666.6    26.21    117.9     1201     2308    28    0  1536    1536   1536       10.4
+vllm    infe      8     152.4    52.61    105.5      263       87    76    0    48       0      0        2.0
+vllm    infe     64     190.0    53.81    112.7      312      534    76    0   384       0     10        2.1
+vllm    infe    256     517.3    72.20    281.4      695      921    76    0  1536       0     11        2.0
+vllm    stock     8      62.1     5.29     58.2      262      575    72    0    48      48     48       19.9
+vllm    stock    64     112.9     5.68     62.4      318     3541    72    0   384     384    384       19.9
+vllm    stock   256     323.0    12.14    168.4      791     5047    72    0  1536    1536   1536       19.0
+
+stock→infe deltas (median of rounds; negative = infe faster):
+  sglang  conc=  8 deltas/req: stock=10.2 infe=24.2 ratio=2.37x
+  sglang  conc=  8 ttft_p50 stock=   77.80 (IQR 106.09)  infe=   78.28 (IQR 203.23)  Δ=  +0.6%
+  sglang  conc=  8 itl_p50  stock=    5.36 (IQR 0.44)  infe=    5.17 (IQR 0.02)  Δ=  -3.6%
+  sglang  conc=  8 itl_p99  stock=   46.48 (IQR 0.16)  infe=   36.41 (IQR 0.34)  Δ= -21.7%
+  sglang  conc=  8 e2e_p50  stock=  274.28 (IQR 106.32)  infe=  274.77 (IQR 202.63)  Δ=  +0.2%
+  sglang  conc=  8 itl/delta stock=  0.5712  infe=  0.2105  Δ= -63.1%  (normalized)
+  sglang  conc= 64 deltas/req: stock=10.4 infe=24.4 ratio=2.35x
+  sglang  conc= 64 ttft_p50 stock=  216.42 (IQR 363.14)  infe=  227.24 (IQR 365.07)  Δ=  +5.0%
+  sglang  conc= 64 itl_p50  stock=   11.24 (IQR 0.42)  infe=    9.49 (IQR 0.61)  Δ= -15.5%
+  sglang  conc= 64 itl_p99  stock=   88.46 (IQR 2.99)  infe=   66.21 (IQR 7.70)  Δ= -25.2%
+  sglang  conc= 64 e2e_p50  stock=  587.78 (IQR 371.75)  infe=  588.18 (IQR 384.04)  Δ=  +0.1%
+  sglang  conc= 64 itl/delta stock=  1.1592  infe=  0.3960  Δ= -65.8%  (normalized)
+  sglang  conc=256 deltas/req: stock=10.4 infe=24.4 ratio=2.35x
+  sglang  conc=256 ttft_p50 stock=  666.56 (IQR 23.19)  infe=  618.78 (IQR 57.10)  Δ=  -7.2%
+  sglang  conc=256 itl_p50  stock=   26.21 (IQR 5.68)  infe=   15.32 (IQR 3.82)  Δ= -41.5%
+  sglang  conc=256 itl_p99  stock=  117.85 (IQR 25.46)  infe=   63.89 (IQR 28.14)  Δ= -45.8%
+  sglang  conc=256 e2e_p50  stock= 1201.10 (IQR 27.73)  infe= 1157.49 (IQR 83.53)  Δ=  -3.6%
+  sglang  conc=256 itl/delta stock=  2.5251  infe=  0.6266  Δ= -75.2%  (normalized)
+  vllm    conc=  8 deltas/req: stock=19.9 infe=2.0 ratio=0.10x
+  vllm    conc=  8 ttft_p50 stock=   62.07 (IQR 1.58)  infe=  152.35 (IQR 0.88)  Δ=+145.5%
+  vllm    conc=  8 itl_p50  stock=    5.29 (IQR 0.05)  infe=   52.61 (IQR 0.06)  Δ=+895.0%
+  vllm    conc=  8 itl_p99  stock=   58.22 (IQR 0.38)  infe=  105.45 (IQR 0.26)  Δ= +81.1%
+  vllm    conc=  8 e2e_p50  stock=  262.44 (IQR 2.82)  infe=  263.09 (IQR 0.94)  Δ=  +0.2%
+  vllm    conc=  8 itl/delta stock=  0.2494  infe= 26.3023  Δ=+10445.4%  (normalized)
+  vllm    conc= 64 deltas/req: stock=19.9 infe=2.1 ratio=0.10x
+  vllm    conc= 64 ttft_p50 stock=  112.91 (IQR 26.18)  infe=  190.03 (IQR 29.56)  Δ= +68.3%
+  vllm    conc= 64 itl_p50  stock=    5.68 (IQR 0.07)  infe=   53.81 (IQR 45.50)  Δ=+847.5%
+  vllm    conc= 64 itl_p99  stock=   62.37 (IQR 1.06)  infe=  112.73 (IQR 2.99)  Δ= +80.8%
+  vllm    conc= 64 e2e_p50  stock=  318.33 (IQR 22.49)  infe=  312.10 (IQR 26.79)  Δ=  -2.0%
+  vllm    conc= 64 itl/delta stock=  0.2709  infe= 34.9089  Δ=+12786.8%  (normalized)
+  vllm    conc=256 deltas/req: stock=19.0 infe=2.0 ratio=0.11x
+  vllm    conc=256 ttft_p50 stock=  322.96 (IQR 67.92)  infe=  517.29 (IQR 12.46)  Δ= +60.2%
+  vllm    conc=256 itl_p50  stock=   12.14 (IQR 0.87)  infe=   72.20 (IQR 42.99)  Δ=+494.6%
+  vllm    conc=256 itl_p99  stock=  168.40 (IQR 9.58)  infe=  281.39 (IQR 3.84)  Δ= +67.1%
+  vllm    conc=256 e2e_p50  stock=  791.03 (IQR 19.70)  infe=  694.91 (IQR 14.55)  Δ= -12.2%
+  vllm    conc=256 itl/delta stock=  0.6163  infe= 55.3297  Δ=+8877.9%  (normalized)

@@ -39,6 +39,7 @@ SAMPLER_PID=$!
 touch $B/results/.running-$NAME
 python3 "$HARNESS/e2e_tool_stream.py" --base-url http://127.0.0.1:$PORT --model $MODEL --arm $ARM --engine $ENGINE --concurrency $CONC --requests $ROUNDS --output $OUT
 rm -f $B/results/.running-$NAME; sleep 1
+kill $SAMPLER_PID 2>/dev/null || true   # sampler only exits when the container dies; driver removes it below
 wait $SAMPLER_PID 2>/dev/null || true
 echo "cpu samples: $(wc -l < ${OUT%.json}.cpu.txt)  mean: $(sed 's/%//' ${OUT%.json}.cpu.txt 2>/dev/null | awk '{s+=$1;n++} END{if(n) printf "%.0f%%", s/n; else print "N/A"}')"
 docker rm -f $NAME >/dev/null; echo "done -> $OUT"

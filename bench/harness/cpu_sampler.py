@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Psutil-based CPU sampler for the benchmark harness (D4).
+"""CPU sampler for the benchmark harness (D4).
 
-Runs alongside e2e_tool_stream.py, sampling CPU% of the API-server PID
-inside the Docker container every 1 second. Writes one float per line
+Samples the container's cgroup (all PIDs) once per second; falls back to the
+entrypoint PID only if the cgroup is unreadable.
+
+Runs alongside e2e_tool_stream.py. Writes one float per line
 to the output file. Replaces the docker-stats approach that only got
 2-5 samples per run (docker stats --no-stream takes 1-2s per call).
 
@@ -53,10 +55,45 @@ def get_cpu_percent(pid: int) -> float | None:
         return None
 
 
+def get_cgroup_cpu_usec(container_name: str):
+    """Total CPU time for *every* process in the container, via its cgroup.
+
+    Reads the cgroup from inside the container, where cgroup v2 exposes the
+    container's own slice at /sys/fs/cgroup.  This counts all PIDs, not just
+    the entrypoint: SGLang runs a scheduler, detokenizer and worker processes,
+    so main-PID sampling understated it badly.
+
+    Returns (cpu_seconds, wall_seconds) or None if unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "exec", container_name, "cat", "/sys/fs/cgroup/cpu.stat"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("usage_usec"):
+                return (int(line.split()[1]) / 1e6, time.time())
+        # cgroup v1 fallback (nanoseconds)
+        result = subprocess.run(
+            ["docker", "exec", container_name, "cat",
+             "/sys/fs/cgroup/cpuacct/cpuacct.usage"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        if result.stdout.strip():
+            return (int(result.stdout.strip()) / 1e9, time.time())
+    except (ValueError, IndexError, subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
 def sample_loop(container_name: str, output: str, interval: float = 1.0):
     """Sample CPU% every `interval` seconds until the container disappears."""
     prev = None
     samples = []
+    use_cgroup = get_cgroup_cpu_usec(container_name) is not None
+    if not use_cgroup:
+        print("cgroup unavailable; falling back to main-PID sampling "
+              "(understates multi-process containers)", file=sys.stderr)
 
     with open(output, "w") as f:
         while True:
@@ -64,7 +101,7 @@ def sample_loop(container_name: str, output: str, interval: float = 1.0):
             if pid is None:
                 break  # Container gone → stop
 
-            cur = get_cpu_percent(pid)
+            cur = get_cgroup_cpu_usec(container_name) if use_cgroup else get_cpu_percent(pid)
             if cur is not None and prev is not None:
                 cpu_ticks, wall_s = cur
                 prev_ticks, prev_wall = prev

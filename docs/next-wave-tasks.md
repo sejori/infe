@@ -1,12 +1,20 @@
 # Next-wave task list (handoff, 2026-09-04) — updated after round 2
 
-**Round-3 status (post B6/B7/shim-fix commit):** A1–A5, B1–B4, B6, B7 done. The vLLM shim now
-buffers excess deltas and drips them one per token (matching stock streaming granularity). Tool-call IDs
-are random (xorshift PRNG). Marker-less continuation calls are parsed via brace-depth tracking.**
+**Round-4 status (see review, "Round 4"):** SGLang B6+B8 fixed — `calls` now matches stock exactly and nameless
+argument fragments flow (24.4 deltas/req vs stock 10.4). vLLM regressed from round-3 parity to broken. Two shim
+bugs remain, both a few lines, both blocking the CPU claim.
 
-Source of truth for *why*: `docs/review-2026-09-04.md`. This file is the *what*, ordered, with acceptance checks.
-Working fixes exist only as scratch copies under `bench/results/rtx4090-20260904/scratch/`; nothing in
-`crates/`, `python/` or `shims/` has been changed yet.
+| # | Where | What |
+|---|---|---|
+| **#9** | `shims/vllm/infe_parsers_vllm/__init__.py` `extract_tool_calls_streaming` | **Blocker.** The D6 buffering feeds the same `delta_text` twice: when a feed produces no delta (normal mid-arguments), `pop_delta_message()` returns None, control falls through to the "try once more" branch and re-feeds. Traced: 30 token chunks in, 55 reach the parser, input corrupted to `<tool_call><tool_call>`, `{"{"namename":`. Result: `args_ok=0`, `has_id≈0`, 2.0 deltas/req vs stock 19.9. There is also a latent inverse bug: when the queue is non-empty, `delta_text` is never fed. Fix both with `self._pending.extend(self._rust_parser.feed(delta_text)); return self._pending.pop_delta_message()` — feed exactly once, always buffer, emit one. Then decide how residual buffered deltas are flushed at end of stream (vLLM has no hook), or revert to the round-3 shim, which was already output-correct, and do the D6 normalisation in the harness only. |
+| **#10** | `shims/sglang/infe_parsers_sglang/__init__.py` completion branch | **Blocker.** `parameters=args_frag if args_frag else "{}"` appends a second JSON object once B2 streams arguments incrementally, because the completion diff is legitimately empty. Accumulated arguments come out as `{"city": "London"}{}` → `args_ok=0` on every request. Emit `""` / skip the delta when the diff is empty; synthesise `"{}"` only if nothing was streamed for that call. |
+| **D6-fix** | `bench/harness/summarize_ab.py` | The `itl/delta` column divides ITL by deltas/req, which double-counts granularity (reports −63…−75 % where e2e is flat). Mean ITL ≈ generation_time / delta_count, so the invariant is ITL × deltas ≈ e2e. Either report ITL × deltas, or drop the column and rely on e2e plus an explicit deltas/req column. |
+| **D4-fix** | `bench/harness/cpu_sampler.py` + driver | Two issues. (a) The sampler exits only when the container disappears, but the driver `wait`s on it *before* `docker rm` → deadlock; worked around by `kill $SAMPLER_PID` before `wait` (uncommitted, in the working tree). Better: give the sampler a stop-file or `--duration`. (b) It samples only the container's main PID; SGLang runs several processes, so totals are understated. Sum over the container's cgroup (`/sys/fs/cgroup/.../cpu.stat`) instead. |
+| **B7** | `crates/infe-parsers/src/types.rs` | Still open: ids are index-derived, so every request's first call shares an id. |
+| **C** | conformance | 14 fixtures now, still all synthetic. The two live blockers (#9, #10) are both *shim* bugs, which no Rust fixture can catch — add a Python-level shim conformance test that drives each engine's parser class over token chunks and asserts accumulated arguments parse and match stock. That is the test that would have caught #9 and #10 before a GPU run. |
+
+Acceptance for round 5: `args_ok == calls` on **both** engines, vLLM `deltas/req` back to ~19, e2e within noise,
+and a CPU trace covering all container PIDs on two output-equivalent arms.
 
 ## A. Make the infe arms run at all (engine-side, small)
 

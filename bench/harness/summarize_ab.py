@@ -14,18 +14,24 @@ for f in sorted(glob.glob(sys.argv[1] if len(sys.argv) > 1 else "*.json")):
         s = lv["summary"]
         k = (r["engine"], r["arm"], s["concurrency"])
         d = rows.setdefault(k, {"ttft_p50": [], "itl_p50": [], "itl_p99": [], "e2e_p50": [], "chunks_per_s": [], "errors": 0, "calls": 0, "args_ok": 0, "has_id": 0, "cpu": cpu,
-                                "tool_deltas_total": 0, "ok_requests": 0, "itl_per_delta": []})
+                                "tool_deltas_total": 0, "ok_requests": 0, "stream_span_ms": []})
         for m in ("ttft_p50", "itl_p50", "itl_p99", "e2e_p50", "chunks_per_s"):
             if s.get(m) is not None: d[m].append(s[m])
         d["errors"] += s["errors"]; d["calls"] += s["parity_calls"]; d["args_ok"] += s["parity_args_ok"]; d["has_id"] += s["parity_has_id"]
         d["tool_deltas_total"] += s.get("tool_deltas_total", 0)
         d["ok_requests"] += s.get("ok", 0)
-        # D6: collect ITL values normalized by delta count per request
+        # D6: delta-count-invariant streaming metric.
+        #
+        # Mean ITL ~= streaming_time / delta_count, so ITL falls purely by
+        # emitting more chunks.  Dividing ITL by delta count (the previous
+        # version) double-counts that effect and reported -63..-75% where e2e
+        # was flat.  The invariant is the SUM of inter-token gaps, i.e. the
+        # wall-clock span from first to last chunk, which does not depend on
+        # how the span is subdivided.
         for req in lv.get("requests", []):
-            req_deltas = req.get("tool_deltas", 0)
             req_itls = req.get("itl_ms", [])
-            if req_deltas > 0 and req_itls:
-                d["itl_per_delta"].extend([x / req_deltas for x in req_itls])
+            if req_itls:
+                d["stream_span_ms"].append(sum(req_itls))
 
 def med(xs): return statistics.median(xs) if xs else float("nan")
 def iqr(xs):
@@ -49,8 +55,10 @@ for (e, a, c), d in sorted(rows.items()):
         sm, im = med(s[m]), med(d[m])
         print(f"  {e:7} conc={c:3d} {m:8} stock={sm:8.2f} (IQR {iqr(s[m]):.2f})  infe={im:8.2f} (IQR {iqr(d[m]):.2f})  Δ={100*(im-sm)/sm:+6.1f}%")
 
-    # D6: normalized ITL (per-delta) comparison
-    s_nitl = med(s["itl_per_delta"]) if s["itl_per_delta"] else None
-    d_nitl = med(d["itl_per_delta"]) if d["itl_per_delta"] else None
-    if s_nitl is not None and d_nitl is not None and s_nitl > 0:
-        print(f"  {e:7} conc={c:3d} itl/delta stock={s_nitl:8.4f}  infe={d_nitl:8.4f}  Δ={100*(d_nitl-s_nitl)/s_nitl:+6.1f}%  (normalized)")
+    # D6: delta-count-invariant comparison. sum(ITL) = first-to-last-chunk
+    # span, unaffected by how many chunks the span is split into. This is the
+    # number to trust when the two arms emit different delta counts.
+    s_span = med(s["stream_span_ms"]) if s["stream_span_ms"] else None
+    d_span = med(d["stream_span_ms"]) if d["stream_span_ms"] else None
+    if s_span is not None and d_span is not None and s_span > 0:
+        print(f"  {e:7} conc={c:3d} stream_span stock={s_span:8.2f} (IQR {iqr(s['stream_span_ms']):.2f})  infe={d_span:8.2f} (IQR {iqr(d['stream_span_ms']):.2f})  Δ={100*(d_span-s_span)/s_span:+6.1f}%  (delta-count invariant)")

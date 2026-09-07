@@ -122,6 +122,51 @@ class _PendingDeltas:
 
         return None
 
+    def drain_delta_message(self) -> DeltaMessage | None:
+        """Build a single DeltaMessage carrying *everything* queued, or None.
+
+        vLLM is fed one token at a time, so the Rust parser usually produces at
+        most one delta per `feed()`; when it produces several (name+id and the
+        first argument diff on the same token) they all belong to the same
+        token and must go out together.  Draining avoids the queue lagging the
+        token stream, which would strand deltas at end-of-stream — vLLM has no
+        end-of-stream hook on the tool parser.
+        """
+        if not (self.tool_calls or self.content_parts or self.reasoning_parts):
+            return None
+
+        delta_tool_calls: list[DeltaToolCall] = []
+        while self.tool_calls:
+            tc = self.tool_calls.popleft()
+            function_kwargs: dict = {}
+            if tc.get("name"):
+                function_kwargs["name"] = tc["name"]
+            if tc.get("arguments_fragment"):
+                function_kwargs["arguments"] = tc["arguments_fragment"]
+            delta_tool_calls.append(
+                DeltaToolCall(
+                    index=tc.get("index", 0),
+                    id=tc.get("id") or None,
+                    type="function",
+                    function=DeltaFunctionCall(**function_kwargs).model_dump(
+                        exclude_none=True
+                    ),
+                )
+            )
+
+        content = "".join(self.content_parts) or None
+        self.content_parts.clear()
+        reasoning = "".join(self.reasoning_parts) or None
+        self.reasoning_parts.clear()
+
+        if not (delta_tool_calls or content or reasoning):
+            return None
+        return DeltaMessage(
+            content=content,
+            tool_calls=delta_tool_calls,
+            reasoning_content=reasoning,
+        )
+
 
 class InfeToolParser(ToolParser):
     """vLLM ToolParser backed by the Rust infe-parsers crate.
@@ -227,23 +272,19 @@ class InfeToolParser(ToolParser):
         """
         self._ensure_parser()
 
-        # If we have buffered deltas, drain them first before feeding new
-        # text. This ensures ordering: previous deltas are sent before
-        # new ones are produced.
-        if not self._pending.tool_calls and not self._pending.content_parts and not self._pending.reasoning_parts:
-            # Nothing buffered — feed new text and populate the queue.
-            result = self._rust_parser.feed(delta_text)
-            self._pending.extend(result)
-
-        msg = self._pending.pop_delta_message()
-        if msg is not None:
-            return msg
-
-        # Queue was empty and feed produced nothing — feed the delta text
-        # now and try once more.
-        result = self._rust_parser.feed(delta_text)
-        self._pending.extend(result)
-        return self._pending.pop_delta_message()
+        # Feed exactly once per call, then emit everything that feed produced.
+        #
+        # The previous drip-feed version fed `delta_text` twice whenever a feed
+        # produced no delta (the normal case mid-arguments, while the parser
+        # accumulates until a diff is stable): `pop_delta_message()` returned
+        # None and control fell through to a "try once more" branch that
+        # re-fed the same text.  Traced against the real tokenizer, 30 token
+        # chunks reached the parser as 55, corrupting the stream into
+        # `<tool_call><tool_call>` / `{"{"namename":` and destroying parity
+        # (args_ok=0, has_id~0).  It also had the inverse bug: with a non-empty
+        # queue, `delta_text` was never fed at all.
+        self._pending.extend(self._rust_parser.feed(delta_text))
+        return self._pending.drain_delta_message()
 
 
 def _make_parser_class(dialect: str, vllm_name: str) -> type[InfeToolParser]:

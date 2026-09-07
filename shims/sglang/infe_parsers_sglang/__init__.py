@@ -67,6 +67,10 @@ class InfeDetector(BaseFormatDetector):
         # name is None as "argument delta for the call at tool_index".
         self._open_tool_index: int = -1
         self._open_tool_name: str | None = None
+        # Whether any argument fragment has already been streamed for the
+        # currently-open call.  Decides whether the completion delta needs to
+        # carry "{}" (nothing streamed) or nothing at all (already streamed).
+        self._open_streamed_args: bool = False
         if tokenizer is not None:
             self.model_tokenizer = tokenizer
         # Set bot/eot tokens from the dialect for SGLang's has_tool_call().
@@ -194,16 +198,34 @@ class InfeDetector(BaseFormatDetector):
                 else:
                     resolved_idx = idx
 
-                calls.append(
-                    ToolCallItem(
-                        tool_index=resolved_idx,
-                        name=resolved_name,
-                        parameters=args_frag if args_frag else "{}",
+                # Arguments are streamed incrementally, so the completion
+                # delta's diff is legitimately empty once everything has
+                # already been sent.  Emitting "{}" there appended a second
+                # JSON object to the accumulated arguments
+                # (`{"city": "London"}{}`), making them unparseable.  Only
+                # synthesise "{}" when nothing was ever streamed for this call.
+                if args_frag:
+                    parameters = args_frag
+                elif not self._open_streamed_args:
+                    parameters = "{}"
+                else:
+                    parameters = ""
+
+                # Skip an item that would convey nothing: no argument diff and
+                # a name the client has already seen.
+                name_already_sent = name is None and self._open_tool_name is not None
+                if parameters or not name_already_sent:
+                    calls.append(
+                        ToolCallItem(
+                            tool_index=resolved_idx,
+                            name=resolved_name,
+                            parameters=parameters,
+                        )
                     )
-                )
                 # Reset the open-call tracker.
                 self._open_tool_index = -1
                 self._open_tool_name = None
+                self._open_streamed_args = False
             elif name is not None:
                 # First delta for this call: carries name (+ id on the Rust
                 # side).  Record the tool_index so subsequent nameless
@@ -211,6 +233,7 @@ class InfeDetector(BaseFormatDetector):
                 resolved_idx = tool_indices.get(name, idx)
                 self._open_tool_index = resolved_idx
                 self._open_tool_name = name
+                self._open_streamed_args = bool(args_frag)
                 calls.append(
                     ToolCallItem(
                         tool_index=resolved_idx,
@@ -230,6 +253,8 @@ class InfeDetector(BaseFormatDetector):
                             parameters=args_frag,
                         )
                     )
+                    if args_frag:
+                        self._open_streamed_args = True
                 # If no call is open, drop the fragment (shouldn't happen
                 # in well-formed streams, but guard against it).
 
