@@ -24,6 +24,13 @@ const CLOSE_MARKER: &str = "\u{3c}/tool_call\u{3e}";
 /// Key behaviour: arguments are streamed **as they arrive**, not buffered
 /// until completion. This is what clients expect — the SSE stream shows
 /// arguments growing token by token.
+///
+/// **B6 — marker-less continuation**: After at least one tool call has
+/// completed, SGLang's template may emit a subsequent call as bare JSON
+/// without the `` wrapper. When the parser is in Idle and
+/// `next_index > 0`, a `{` at the start of the remaining text is treated
+/// as the beginning of a new tool call. Brace-depth tracking detects
+/// completion in the absence of a close marker.
 #[derive(Debug, Default)]
 pub struct HermesParser {
     /// Text pending analysis (partial markers that span chunk boundaries).
@@ -34,6 +41,12 @@ pub struct HermesParser {
     /// arrived before we could parse the `name` field. Emptied once the name
     /// is emitted and argument streaming begins.
     pre_name_buffer: String,
+    /// Brace depth for marker-less (B6) continuation calls. When > 0, the
+    /// parser is accumulating a bare-JSON tool call without a close marker.
+    brace_depth: u32,
+    /// Whether the current tool call is marker-less (no close marker expected).
+    /// Set when a `{` triggers a new call after at least one completed call.
+    markerless: bool,
 }
 
 impl HermesParser {
@@ -159,6 +172,68 @@ impl HermesParser {
             }
         }
     }
+
+    /// Find the position where brace depth returns to zero in the given text.
+    /// Starts scanning with `initial_depth` as the current depth.
+    /// Returns `Some(byte_pos_after_closing_brace)` if found, `None` if
+    /// the JSON is not yet complete in this text.
+    fn find_brace_completion(text: &str, mut depth: u32) -> Option<usize> {
+        for (byte_pos, ch) in text.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(byte_pos + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Emit the completion delta for the current tool call's JSON body.
+    /// Emits any remaining argument diff, then a bare completion delta if
+    /// nothing remains.
+    fn emit_completion(state: &mut ToolCallArgState, json_body: &str, result: &mut ParseResult) {
+        // Ensure incremental emission happens (name + args diff).
+        Self::try_emit_incremental(state, json_body, result);
+
+        if let Some(args_raw) = Self::extract_arguments_raw(json_body, true) {
+            let already = state.last_emitted_args_len;
+            if args_raw.len() > already {
+                let diff = &args_raw[already..];
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: None,
+                    name: None,
+                    arguments_fragment: diff.to_string(),
+                    is_complete: true,
+                });
+                state.last_emitted_args_len = args_raw.len();
+            } else {
+                // Args were already fully streamed — emit a
+                // bare completion delta.
+                result.tool_calls.push(ToolCallDelta {
+                    index: state.index.unwrap_or(0),
+                    id: None,
+                    name: None,
+                    arguments_fragment: String::new(),
+                    is_complete: true,
+                });
+            }
+        } else {
+            // No arguments key — emit completion with empty args.
+            result.tool_calls.push(ToolCallDelta {
+                index: state.index.unwrap_or(0),
+                id: None,
+                name: None,
+                arguments_fragment: String::new(),
+                is_complete: true,
+            });
+        }
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -183,6 +258,24 @@ impl DialectParser for HermesParser {
         while !remaining.is_empty() {
             match state.state {
                 ToolCallState::Idle => {
+                    // B6: Marker-less continuation call. After at least one
+                    // completed tool call, SGLang's template may emit a
+                    // subsequent call as bare JSON without the
+                    // wrapper. Treat a leading '{' as a new tool call.
+                    if state.next_index > 0 && remaining.starts_with('{') {
+                        state.begin_tool_call();
+                        self.in_tool_call = true;
+                        self.markerless = true;
+                        self.brace_depth = 1;
+                        state.arguments_buffer.push('{');
+                        remaining = &remaining[1..];
+
+                        // Try immediate incremental emission.
+                        let buf = state.arguments_buffer.clone();
+                        Self::try_emit_incremental(state, &buf, result);
+                        continue;
+                    }
+
                     // Check if remaining starts with the open marker.
                     if let Some(consumed) = Self::match_marker(remaining, OPEN_MARKER) {
                         state.begin_tool_call();
@@ -225,86 +318,84 @@ impl DialectParser for HermesParser {
                     }
                 }
                 ToolCallState::InToolCall => {
-                    // Search for the close marker in remaining.
-                    if let Some(pos) = remaining.find(CLOSE_MARKER) {
-                        // Accumulate chunk before close marker.
-                        let chunk = &remaining[..pos];
-                        if !chunk.is_empty() {
+                    if self.markerless {
+                        // B6: Marker-less continuation call. Track brace depth
+                        // to detect completion instead of looking for a close
+                        // marker.
+                        // First, check if the JSON completes within this chunk.
+                        if let Some(close_pos) =
+                            Self::find_brace_completion(remaining, self.brace_depth)
+                        {
+                            // JSON is complete up to close_pos.
+                            let chunk = &remaining[..close_pos];
                             state.arguments_buffer.push_str(chunk);
-                        }
 
-                        // Now the JSON body is complete — try to emit final
-                        // incremental deltas + the completion delta.
-                        let json_body = state.arguments_buffer.clone();
-                        let _is_complete = Self::is_complete_json(&json_body);
+                            let json_body = state.arguments_buffer.clone();
+                            Self::emit_completion(state, &json_body, result);
 
-                        // Emit any remaining name/args diff.
-                        Self::try_emit_incremental(state, &json_body, result);
-
-                        // Also compute the diff at completion: if the JSON was
-                        // complete before the close marker arrived, the args
-                        // may already be fully emitted. But if is_complete was
-                        // false before (partial JSON), we need to emit the
-                        // final args now with is_complete=true.
-                        if let Some(args_raw) = Self::extract_arguments_raw(&json_body, true) {
-                            let already = state.last_emitted_args_len;
-                            if args_raw.len() > already {
-                                let diff = &args_raw[already..];
-                                result.tool_calls.push(ToolCallDelta {
-                                    index: state.index.unwrap_or(0),
-                                    id: None,
-                                    name: None,
-                                    arguments_fragment: diff.to_string(),
-                                    is_complete: true,
-                                });
-                                state.last_emitted_args_len = args_raw.len();
-                            } else {
-                                // Args were already fully streamed — emit a
-                                // bare completion delta.
-                                result.tool_calls.push(ToolCallDelta {
-                                    index: state.index.unwrap_or(0),
-                                    id: None,
-                                    name: None,
-                                    arguments_fragment: String::new(),
-                                    is_complete: true,
-                                });
+                            state.complete_tool_call();
+                            state.reset_to_idle();
+                            self.markerless = false;
+                            self.brace_depth = 0;
+                            remaining = &remaining[close_pos..];
+                        } else {
+                            // Not complete yet. Accumulate and try incremental.
+                            // Hold back nothing — there's no marker to
+                            // partially match.
+                            state.arguments_buffer.push_str(remaining);
+                            // Update brace depth.
+                            for ch in remaining.chars() {
+                                match ch {
+                                    '{' => self.brace_depth += 1,
+                                    '}' => self.brace_depth = self.brace_depth.saturating_sub(1),
+                                    _ => {}
+                                }
                             }
-                        } else {
-                            // No arguments key — emit completion with empty args.
-                            result.tool_calls.push(ToolCallDelta {
-                                index: state.index.unwrap_or(0),
-                                id: None,
-                                name: None,
-                                arguments_fragment: String::new(),
-                                is_complete: true,
-                            });
-                        }
-
-                        state.complete_tool_call();
-                        state.reset_to_idle();
-                        self.in_tool_call = false;
-                        self.pre_name_buffer.clear();
-                        remaining = &remaining[pos + CLOSE_MARKER.len()..];
-                    } else if Self::is_partial_prefix(remaining, CLOSE_MARKER) {
-                        self.pending.push_str(remaining);
-                        break;
-                    } else {
-                        // No close marker found. Accumulate the raw text and
-                        // try to emit incremental argument diffs.
-                        // Hold back any tail that could be a partial close marker.
-                        let split_pos = Self::find_tail_partial(remaining, CLOSE_MARKER);
-                        let chunk = &remaining[..split_pos];
-                        if chunk.is_empty() {
-                        } else {
-                            state.arguments_buffer.push_str(chunk);
-                            // Try incremental emission now.
                             let buf = state.arguments_buffer.clone();
                             Self::try_emit_incremental(state, &buf, result);
+                            break;
                         }
-                        if split_pos < remaining.len() {
-                            self.pending.push_str(&remaining[split_pos..]);
+                    } else {
+                        // Search for the close marker in remaining.
+                        if let Some(pos) = remaining.find(CLOSE_MARKER) {
+                            // Accumulate chunk before close marker.
+                            let chunk = &remaining[..pos];
+                            if !chunk.is_empty() {
+                                state.arguments_buffer.push_str(chunk);
+                            }
+
+                            // Now the JSON body is complete — emit final
+                            // incremental deltas + the completion delta.
+                            let json_body = state.arguments_buffer.clone();
+
+                            Self::emit_completion(state, &json_body, result);
+
+                            state.complete_tool_call();
+                            state.reset_to_idle();
+                            self.in_tool_call = false;
+                            self.pre_name_buffer.clear();
+                            remaining = &remaining[pos + CLOSE_MARKER.len()..];
+                        } else if Self::is_partial_prefix(remaining, CLOSE_MARKER) {
+                            self.pending.push_str(remaining);
+                            break;
+                        } else {
+                            // No close marker found. Accumulate the raw text and
+                            // try to emit incremental argument diffs.
+                            // Hold back any tail that could be a partial close marker.
+                            let split_pos = Self::find_tail_partial(remaining, CLOSE_MARKER);
+                            let chunk = &remaining[..split_pos];
+                            if chunk.is_empty() {
+                            } else {
+                                state.arguments_buffer.push_str(chunk);
+                                // Try incremental emission now.
+                                let buf = state.arguments_buffer.clone();
+                                Self::try_emit_incremental(state, &buf, result);
+                            }
+                            if split_pos < remaining.len() {
+                                self.pending.push_str(&remaining[split_pos..]);
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
                 ToolCallState::Complete => {
@@ -319,6 +410,8 @@ impl DialectParser for HermesParser {
         self.pending.clear();
         self.in_tool_call = false;
         self.pre_name_buffer.clear();
+        self.brace_depth = 0;
+        self.markerless = false;
     }
 }
 
@@ -504,5 +597,167 @@ mod tests {
             all_args.contains("\"city\""),
             "Accumulated args should contain city key, got: {all_args}"
         );
+    }
+
+    // B6: Marker-less continuation call tests
+
+    #[test]
+    fn b6_markerless_continuation_single_chunk() {
+        // SGLang scenario: first call with markers, second as bare JSON.
+        let mut p = make_parser();
+        let input = format!(
+            "{OPEN_MARKER}{{\"name\":\"get_weather\",\"arguments\":{{\"city\":\"London\"}}}}{CLOSE_MARKER}{{\"name\":\"get_time\",\"arguments\":{{\"city\":\"London\"}}}}"
+        );
+        let r = p.feed(&input);
+        let completed: Vec<_> = r.tool_calls.iter().filter(|d| d.is_complete).collect();
+        assert_eq!(completed.len(), 2, "both calls should be complete");
+        assert_eq!(completed[0].index, 0);
+        assert_eq!(completed[1].index, 1);
+        let names: Vec<_> = r
+            .tool_calls
+            .iter()
+            .filter_map(|d| d.name.as_deref())
+            .collect();
+        assert!(
+            names.contains(&"get_weather"),
+            "should contain get_weather: {names:?}"
+        );
+        assert!(
+            names.contains(&"get_time"),
+            "should contain get_time: {names:?}"
+        );
+        // Second call should NOT appear as content.
+        let content_joined: String = r.content.join("");
+        assert!(
+            !content_joined.contains("get_time"),
+            "second call should not leak into content: {content_joined}"
+        );
+    }
+
+    #[test]
+    fn b6_markerless_continuation_streamed() {
+        // Same as above but fed token-by-token, mimicking engine streaming.
+        let mut p = make_parser();
+        // First call with markers.
+        let _ = p.feed(OPEN_MARKER);
+        let _ = p.feed("{\"name\":\"get_weather\",\"arguments\":");
+        let _ = p.feed("{\"city\":\"London\"}}");
+        let r = p.feed(CLOSE_MARKER);
+        assert!(
+            r.tool_calls.iter().any(|d| d.is_complete),
+            "first call should complete"
+        );
+
+        // Second call as bare JSON (no markers).
+        let r_name = p.feed("{\"name\":\"get_time\",\"arguments\":");
+        let r2 = p.feed("{\"city\":\"London\"}}");
+        assert!(
+            r2.tool_calls.iter().any(|d| d.is_complete),
+            "second call should complete (markerless)"
+        );
+        // Name is emitted on the first feed (r_name), args+completion on r2.
+        let all_deltas: Vec<_> = r_name
+            .tool_calls
+            .iter()
+            .chain(r2.tool_calls.iter())
+            .collect();
+        let names: Vec<_> = all_deltas
+            .iter()
+            .filter_map(|d| d.name.as_deref())
+            .collect();
+        assert!(
+            names.contains(&"get_time"),
+            "should contain get_time: {names:?}"
+        );
+    }
+
+    #[test]
+    fn b6_markerless_does_not_trigger_on_initial_content() {
+        // A '{' before any completed tool call should be content, not a tool call.
+        let mut p = make_parser();
+        let r = p.feed("Here is some JSON: {\"key\":\"value\"}");
+        assert!(
+            r.tool_calls.is_empty(),
+            "should not treat initial brace as tool call"
+        );
+        assert!(!r.content.is_empty(), "should emit as content");
+    }
+
+    #[test]
+    fn b6_markerless_content_after_completion() {
+        // After a completed call, non-JSON text should still be content.
+        let mut p = make_parser();
+        let input = format!("{OPEN_MARKER}{{\"name\":\"fn\",\"arguments\":{{}}}}{CLOSE_MARKER}");
+        let _ = p.feed(&input);
+        let r = p.feed(" Done.");
+        assert!(r.tool_calls.is_empty());
+        assert!(!r.content.is_empty());
+        assert!(r.content[0].contains("Done"));
+    }
+
+    #[test]
+    fn b6_markerless_continuation_across_chunks_bare_json() {
+        // Second call's JSON spans multiple feed calls.
+        let mut p = make_parser();
+        let input = format!("{OPEN_MARKER}{{\"name\":\"fn\",\"arguments\":{{}}}}{CLOSE_MARKER}");
+        let _ = p.feed(&input);
+
+        let r1 = p.feed("{\"name\":");
+        assert!(
+            r1.tool_calls.is_empty(),
+            "should not emit until name is complete"
+        );
+
+        let r2 = p.feed("\"get_time\"");
+        assert!(!r2.tool_calls.is_empty(), "should emit name delta");
+        assert_eq!(find_name(&r2.tool_calls).unwrap(), "get_time");
+
+        let r3 = p.feed(",\"arguments\":{\"city\":\"London\"}}");
+        let last = r3.tool_calls.last().expect("at least one delta");
+        assert!(last.is_complete, "should complete the call");
+    }
+
+    #[test]
+    fn b7_tool_call_ids_are_random() {
+        // B7: IDs should not be deterministic (call_aaaaaaaa).
+        let mut p = make_parser();
+        let input = format!("{OPEN_MARKER}{{\"name\":\"fn\",\"arguments\":{{}}}}{CLOSE_MARKER}");
+        let r1 = p.feed(&input);
+
+        // Second call to get a different ID.
+        let r2 = p.feed(&input);
+
+        let id1 = r1.tool_calls[0].id.as_ref().unwrap();
+        let id2 = r2.tool_calls[0].id.as_ref().unwrap();
+        assert!(
+            id1 != id2,
+            "tool call IDs should be random/unpredictable, got {id1} and {id2}"
+        );
+
+        // IDs should still start with "call_".
+        assert!(id1.starts_with("call_"));
+        assert!(id2.starts_with("call_"));
+
+        // IDs should not be the old deterministic value.
+        assert!(
+            id1 != "call_aaaaaaaa",
+            "should not use deterministic \"call_aaaaaaaa\""
+        );
+    }
+
+    #[test]
+    fn multiple_marker_calls_and_one_markerless() {
+        // First two calls with markers, third as bare JSON.
+        let mut p = make_parser();
+        let input = format!("{OPEN_MARKER}{{\"name\":\"fn1\",\"arguments\":{{}}}}{CLOSE_MARKER}");
+        let _ = p.feed(&input); // first call
+        let _ = p.feed(&input); // second call
+        let r = p.feed("{\"name\":\"fn3\",\"arguments\":{}}");
+        assert!(
+            r.tool_calls
+                .iter()
+                .any(|d| d.name.as_deref() == Some("fn3"))
+        );
+        assert!(r.tool_calls.iter().any(|d| d.is_complete));
     }
 }

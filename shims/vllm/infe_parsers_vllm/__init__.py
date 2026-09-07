@@ -24,6 +24,7 @@ avoid shadowing the real wheel on `sys.path`. vLLM loads it via
 
 import json
 import logging
+from collections import deque
 
 try:  # vLLM main (2026-09) moved these; releases <=0.28 keep them under openai.engine
     from vllm.entrypoints.generate.base.protocol import (
@@ -54,6 +55,74 @@ _INFE_DIALECT_MAP = {
 }
 
 
+class _PendingDeltas:
+    """FIFO queue of tool-call deltas and content fragments waiting to be sent.
+
+    vLLM calls `extract_tool_calls_streaming` once per decoded token batch and
+    expects at most one `DeltaMessage` in return.  The Rust parser, however,
+    may produce multiple deltas in a single `feed()` call (e.g. name+id, an
+    argument diff, and a completion delta all at once).  We buffer the excess
+    here and drip-feed them to vLLM one at a time, so the SSE client sees the
+    same fine-grained streaming as the stock parser.
+    """
+
+    def __init__(self):
+        self.tool_calls: deque[dict] = deque()
+        self.content_parts: deque[str] = deque()
+        self.reasoning_parts: deque[str] = deque()
+
+    def extend(self, result: dict) -> None:
+        """Append all deltas from a Rust parser result."""
+        for tc in result.get("tool_calls", []):
+            self.tool_calls.append(tc)
+        for content in result.get("content", []):
+            self.content_parts.append(content)
+        for r in result.get("reasoning", []):
+            self.reasoning_parts.append(r["fragment"])
+
+    def pop_delta_message(self) -> DeltaMessage | None:
+        """Build the next single DeltaMessage, or None if the queue is empty.
+
+        Each call returns at most one tool-call delta OR one content fragment
+        OR one reasoning fragment, matching vLLM's per-token streaming
+        behaviour.  Tool-call deltas get priority so name+id arrive before
+        arguments.
+        """
+        if self.tool_calls:
+            tc = self.tool_calls.popleft()
+            function_kwargs: dict = {}
+            if tc.get("name"):
+                function_kwargs["name"] = tc["name"]
+            if tc.get("arguments_fragment"):
+                function_kwargs["arguments"] = tc["arguments_fragment"]
+            return DeltaMessage(
+                tool_calls=[
+                    DeltaToolCall(
+                        index=tc.get("index", 0),
+                        id=tc.get("id") or None,
+                        type="function",
+                        function=DeltaFunctionCall(
+                            **function_kwargs
+                        ).model_dump(exclude_none=True),
+                    )
+                ],
+            )
+
+        if self.content_parts:
+            content = self.content_parts.popleft()
+            if content:
+                return DeltaMessage(content=content, tool_calls=[])
+
+        if self.reasoning_parts:
+            fragment = self.reasoning_parts.popleft()
+            if fragment:
+                return DeltaMessage(
+                    reasoning_content=fragment, tool_calls=[]
+                )
+
+        return None
+
+
 class InfeToolParser(ToolParser):
     """vLLM ToolParser backed by the Rust infe-parsers crate.
 
@@ -69,57 +138,14 @@ class InfeToolParser(ToolParser):
         super().__init__(tokenizer, tools)
         # One Rust parser per request — created fresh, fed deltas.
         self._rust_parser: RustStreamingParser | None = None
+        # Buffered deltas waiting to be sent across successive
+        # extract_tool_calls_streaming calls.
+        self._pending = _PendingDeltas()
 
     def _ensure_parser(self):
         """Lazily create the Rust parser on first use."""
         if self._rust_parser is None:
             self._rust_parser = RustStreamingParser(self._infe_dialect)
-
-    def _result_to_delta_message(
-        self, result: dict, request: ChatCompletionRequest
-    ) -> DeltaMessage | None:
-        """Translate the Rust parser's result dict into a vLLM DeltaMessage."""
-        tool_calls = result.get("tool_calls", [])
-        content_parts = result.get("content", [])
-        reasoning_parts = result.get("reasoning", [])
-
-        content = None
-        if content_parts:
-            content = "".join(content_parts)
-
-        delta_tool_calls: list[DeltaToolCall] = []
-        for tc in tool_calls:
-            # vLLM expects the first delta to carry the tool name + id.
-            function_kwargs: dict = {}
-            if tc.get("name"):
-                function_kwargs["name"] = tc["name"]
-            if tc.get("arguments_fragment"):
-                function_kwargs["arguments"] = tc["arguments_fragment"]
-            # The id belongs on DeltaToolCall, not DeltaFunctionCall (pydantic silently
-            # drops unknown kwargs there, which is why streamed deltas had no id).
-            delta_tool_calls.append(
-                DeltaToolCall(
-                    index=tc.get("index", 0),
-                    id=tc.get("id") or None,
-                    type="function",
-                    function=DeltaFunctionCall(**function_kwargs).model_dump(
-                        exclude_none=True
-                    ),
-                )
-            )
-
-        # If we have reasoning, put it in the reasoning_content field.
-        reasoning_content = None
-        if reasoning_parts:
-            reasoning_content = "".join(r["fragment"] for r in reasoning_parts)
-
-        if content or delta_tool_calls or reasoning_content:
-            return DeltaMessage(
-                content=content,
-                tool_calls=delta_tool_calls,  # must be a list, not None (vLLM 0.28)
-                reasoning_content=reasoning_content,
-            )
-        return None
 
     def extract_tool_calls(
         self, model_output: str, request: ChatCompletionRequest
@@ -193,10 +219,31 @@ class InfeToolParser(ToolParser):
         delta_token_ids,
         request: ChatCompletionRequest,
     ) -> DeltaMessage | None:
-        """Streaming: feed only the new delta text, translate the result."""
+        """Streaming: feed only the new delta text, translate the result.
+
+        The Rust parser may produce multiple deltas per feed() call. We
+        buffer them and return one DeltaMessage per call, so the SSE
+        stream mirrors the stock parser's per-token granularity.
+        """
         self._ensure_parser()
+
+        # If we have buffered deltas, drain them first before feeding new
+        # text. This ensures ordering: previous deltas are sent before
+        # new ones are produced.
+        if not self._pending.tool_calls and not self._pending.content_parts and not self._pending.reasoning_parts:
+            # Nothing buffered — feed new text and populate the queue.
+            result = self._rust_parser.feed(delta_text)
+            self._pending.extend(result)
+
+        msg = self._pending.pop_delta_message()
+        if msg is not None:
+            return msg
+
+        # Queue was empty and feed produced nothing — feed the delta text
+        # now and try once more.
         result = self._rust_parser.feed(delta_text)
-        return self._result_to_delta_message(result, request)
+        self._pending.extend(result)
+        return self._pending.pop_delta_message()
 
 
 def _make_parser_class(dialect: str, vllm_name: str) -> type[InfeToolParser]:
