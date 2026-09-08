@@ -2,7 +2,7 @@ manifest_version: "0.1.0"
 component: infe-parsers
 version: "0.1.1"
 type: tool_call_and_reasoning_parser
-status: alpha
+status: complete   # parity achieved on both engines round 5; no perf win (see docs/review-2026-09-04.md)
 
 description: |
   Streaming tool-call and reasoning-content parsers for LLM inference engines.
@@ -77,6 +77,6 @@ conformance:
     - deepseek_reasoning_block
 
 benchmarks:
-  latest_result: "bench/results/rtx4090-20260905-round3/"
-  latest_date: "2026-09-05"
+  latest_result: "bench/results/rtx4090-20260907-round5/"
+  latest_date: "2026-09-07"
   note: "Round 3 A/B on RTX 4090. vLLM full parity (calls/args/ids match stock). SGLang B6+B8 fixes now on main but not yet benchmarked. Next round will test all merged fixes together."
