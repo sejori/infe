@@ -22,7 +22,37 @@ comparison is clean. Full write-up, setup corrections and limitations: `docs/inf
 Two things to extract rather than discard:
 - **Worth filing upstream.** SGLang's Rust TreeCore end-to-end benchmarking is an explicitly "planned
   follow-up"; we have a clean three-arm measurement of a 7.6-9.1 % regression with a pinned repro.
+  **Filed: SGLang issue #38536** (https://github.com/sgl-project/sglang/issues/38536)
 - **The ranking lesson, now twice-confirmed** (see below).
+
+## `infe-sched`: M0 profiling kit BUILT — awaiting benchmark run
+
+The profiling kit is complete and ready for the 4090. Full plan and kill criterion:
+`docs/infe-sched-m0-plan.md`.
+
+**What was built:**
+- `shims/sglang/infe_sched_probe/` — SGLang plugin that hooks `get_next_batch_to_run`,
+  `run_batch`, `process_batch_result` with AROUND timers. Loaded via PYTHONPATH, no fork.
+- `bench/harness/e2e_high_admission.py` — three workload modes (mixed_lengths, short_burst,
+  tool_call) that stress the scheduler in ways e2e_tool_stream.py does not
+- `bench/harness/run_sched_probe.sh` — run driver: stock vs probe × 3 modes, interleaved
+- `bench/harness/summarize_sched_probe.py` — results summarizer with kill-criterion verdict
+- `bench/harness/sglang_sched_timer.py` — reference implementation (same code as the plugin)
+
+**To run on the 4090:**
+```bash
+INFE_REPO=/path/to/infe PORT=18000 \
+  bash bench/harness/run_sched_probe.sh 0 8 64 256
+```
+
+**Kill criterion (written before running):** if `get_next_batch_to_run` is <5% of per-step wall
+time under any workload AND fits inside the GPU forward shadow under overlap scheduling, stop.
+The scheduler is not on the critical path.
+
+**Prior art check:** No native scheduler exists in either engine — SGLang's Rust work is
+limited to the router and TreeCore. vLLM's `--scheduler-cls` seam is used for hardware
+constraints (vllm-spyre), not performance. There is no prior implementation to learn from,
+unlike infe-kv.
 
 ## What next — read this before picking up `infe-sched`
 
@@ -40,7 +70,7 @@ also be flat.** So before any implementation:
 1. **Profile first, with a written kill criterion.** The M0 pattern worked twice and cost days, not weeks.
 2. **Check whether the engines already tried it.** Both times the answer was in the engine's own repo — SGLang
    had shipped a C++ *and* a Rust radix tree before we started. Search vLLM/SGLang PRs for a native scheduler
-   before writing one.
+   before writing one. **Done for infe-sched: no prior native scheduler exists in either engine.**
 3. **Consider re-aiming the thesis.** BRIEF §5.1's boundary rule assumed the win comes from moving a hot CPU
    loop off Python. Two rounds say the loops around decode are not hot enough for that on a small dense model.
    Testing it properly likely needs either (a) a regime where CPU genuinely binds — very large batch, many tiny
@@ -105,6 +135,7 @@ All items B1-B8 are **done** as of round 5. Kept for reference.
 
 - `bench/harness/{e2e_tool_stream.py, run_ab_docker.sh, summarize_ab.py}` are committed.
 - Round 6: harness updated to support `rust` and `python` SGLang arms for the infe-kv probe.
+- infe-sched M0: `run_sched_probe.sh`, `e2e_high_admission.py`, `summarize_sched_probe.py`, `shims/sglang/infe_sched_probe/` added.
 - CI: fmt/clippy/test/conformance jobs all green.
 - Still needed: Python-level conformance job testing shims end-to-end against a live engine.
 - `infe-core` is unused; either use it or stop listing it as a dependency.
@@ -121,4 +152,11 @@ cp bench/harness/{e2e_tool_stream.py,run_ab_docker.sh} $INFE_BENCH_DIR/; cp benc
 for spec in "vllm stock 18001" "vllm infe 18001" "sglang stock 18000" "sglang infe 18000"; do set -- $spec
   PORT=$3 ROUNDS=3 $INFE_BENCH_DIR/run_ab_docker.sh $1 $2 <gpu-index> 8 64 256; done
 (cd $INFE_BENCH_DIR/results && python3 /path/to/bench/harness/summarize_ab.py "*.json")
+```
+
+### infe-sched M0 probe (requires no wheel — the plugin is pure Python)
+
+```
+INFE_REPO=/path/to/infe PORT=18000 bash bench/harness/run_sched_probe.sh 0 8 64 256
+cd $INFE_BENCH_DIR/results && python3 $INFE_REPO/bench/harness/summarize_sched_probe.py 'sched_probe_*.json'
 ```

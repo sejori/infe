@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infe_sched_probe"
+version = "0.1.0"
+description = "SGLang plugin: per-step scheduler phase timing for the infe-sched M0 probe"
+requires-python = ">=3.10"
+
+[project.entry-points."sglang.srt.plugins"]
+infe_sched_probe = "infe_sched_probe.plugin"
+
+[tool.setuptools]
+packages = ["infe_sched_probe"]
+
+[tool.setuptools.package-dir]
+infe_sched_probe = "."
