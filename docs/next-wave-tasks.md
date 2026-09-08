@@ -10,48 +10,42 @@ Do not spend more rounds tuning it for speed. Parsing sits on the SSE path, not 
 component's real value was proving manifest -> crate -> wheel -> shim -> conformance -> A/B end to end on two
 engines, which it did.
 
-## infe-kv: killed at M0
+## `infe-kv`: killed at M0, and confirmed by Round 6 (2026-09-08)
 
-**Do not build `infe-kv`.** Full findings: `docs/infe-kv-m0-findings.md`.
+**Do not build it.** M0 answered the kill criterion from SGLang's own PRs (C++ tree closed with zero end-to-end
+win despite a 229x insert-finalisation microbenchmark; Rust replacement merged with no published end-to-end
+numbers). **Round 6 confirmed it independently on our hardware**: the shipped Rust TreeCore is *slower* than
+Python — `stream_span` +7.6 % @conc64, +9.1 % @conc256, e2e ~+11 % — while using 6 % less CPU. The
+engine-version control (0.5.18 vs 0.5.19 Python) was flat and all arms had identical deltas/req, so the
+comparison is clean. Full write-up, setup corrections and limitations: `docs/infe-kv-m0-findings.md` §"Round 6".
 
-The M0 kill criterion was met before writing any code:
+Two things to extract rather than discard:
+- **Worth filing upstream.** SGLang's Rust TreeCore end-to-end benchmarking is an explicitly "planned
+  follow-up"; we have a clean three-arm measurement of a 7.6-9.1 % regression with a pinned repro.
+- **The ranking lesson, now twice-confirmed** (see below).
 
-1. SGLang's own C++ radix tree (PR #36128, closed) showed microbenchmark wins
-   (match_prefix -29%, insert finalization -229x) but **zero end-to-end improvement**
-   (C++ 3799 tok/s vs Python 3821 tok/s, within run-to-run variance).
-2. SGLang replaced the C++ attempt with a **Rust TreeCore** (PR #32710, merged),
-   shipped in **v0.5.19** (released 2026-09-05). Opt-in via
-   `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=rust`. 2,436 shared parity tests pass.
-3. **No published end-to-end numbers** for the Rust TreeCore — because the
-   C++ numbers already showed the radix cache is not on the critical path.
-4. The engine now ships a native Rust TreeCore. An external `infe-kv` would
-   mean competing with SGLang's own Rust code on their engine — not a drop-in.
+## What next — read this before picking up `infe-sched`
 
-The single remaining useful action is **Round 6**: a three-arm A/B
-(`stock` 0.5.18 vs `python` 0.5.19 vs `rust` 0.5.19) to confirm the
-finding on our hardware. The harness is updated to support `rust` and
-`python` arms; see below.
+Two components have now been measured end-to-end and **both were flat or negative**:
 
-## Round 6: the infe-kv probe (harness ready, needs GPU)
+| component | outcome | why |
+|---|---|---|
+| `infe-parsers` | parity, no win (round 5) | parsing is on the SSE path, not between GPU batches |
+| `infe-kv` | not built; the native impl that ships is a regression (round 6) | radix-cache CPU is ~2 % of a decode step |
 
-Run on the RTX 4090:
+The common cause is visible in BRIEF §4's own numbers: decode dominates, and the CPU-side work around it is
+single-digit percent of the step. `infe-sched` (BRIEF §6.3) sits in the same place. **The prior is that it will
+also be flat.** So before any implementation:
 
-```bash
-export INFE_BENCH_DIR=~/infe-bench; cd $INFE_BENCH_DIR
-# Three SGLang arms: stock (0.5.18), python (0.5.19 control), rust (0.5.19 Rust TreeCore)
-for spec in "sglang stock 18000" "sglang python 18001" "sglang rust 18002"; do set -- $spec
-  PORT=$3 ROUNDS=3 $INFE_BENCH_DIR/run_ab_docker.sh $1 $2 0 8 64 256; done
-(cd $INFE_BENCH_DIR/results && python3 summarize_ab.py "sglang_*.json")
-```
-
-The `stock` and `infe` arms use `lmsysorg/sglang:latest` (currently 0.5.18).
-The `rust` and `python` arms also use `:latest` — they expect v0.5.19+ to be
-the latest tag. If `:latest` hasn't updated to 0.5.19 yet, pull explicitly:
-`docker pull lmsysorg/sglang:v0.5.19` and set `SGLANG_IMAGE_TAG=v0.5.19`.
-
-Expected result: `rust` ~= `python` on `stream_span` and CPU, confirming the
-radix cache is not on the critical path. If `rust` beats `python`, the M0
-kill is invalidated and infe-kv should be reconsidered.
+1. **Profile first, with a written kill criterion.** The M0 pattern worked twice and cost days, not weeks.
+2. **Check whether the engines already tried it.** Both times the answer was in the engine's own repo — SGLang
+   had shipped a C++ *and* a Rust radix tree before we started. Search vLLM/SGLang PRs for a native scheduler
+   before writing one.
+3. **Consider re-aiming the thesis.** BRIEF §5.1's boundary rule assumed the win comes from moving a hot CPU
+   loop off Python. Two rounds say the loops around decode are not hot enough for that on a small dense model.
+   Testing it properly likely needs either (a) a regime where CPU genuinely binds — very large batch, many tiny
+   requests, CPU-bound preprocessing, or disaggregated prefill where the scheduler runs hot — or (b) a target
+   other than per-step CPU: correctness, portability or memory, which `infe-parsers` did actually deliver.
 
 ## Carried-over items (small, not blocking)
 

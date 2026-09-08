@@ -1,0 +1,48 @@
+engine  arm    conc  ttft_p50  itl_p50  itl_p99  e2e_p50 chunks/s  cpu%  err calls args_ok has_id deltas/req
+sglang  python    8      81.5     5.25     46.6      278      322   172    0    48      48     48       10.2
+sglang  python   64     223.7    10.98     86.4      606     1183   172    0   384     384    384       10.4
+sglang  python  256     664.2    24.78    125.9     1208     2295   172    0  1536    1536   1536       10.4
+sglang  rust      8      79.5     5.42     46.4      275      325   161    0    48      48     48       10.2
+sglang  rust     64     249.9    12.54    103.7      678     1053   161    0   384     384    384       10.4
+sglang  rust    256     752.2    24.32    133.3     1340     2071   161    0  1536    1536   1536       10.4
+sglang  stock     8      73.8     5.34     46.5      269      333   152    0    48      48     48       10.2
+sglang  stock    64     220.0    11.28     94.7      626     1140   152    0   384     384    384       10.4
+sglang  stock   256     662.0    25.29    118.6     1180     2356   152    0  1536    1536   1536       10.4
+
+python -> other arms (median of rounds; negative = other faster):
+  sglang  conc=  8 deltas/req: python=10.2 rust=10.2 ratio=1.00x
+  sglang  conc=  8 ttft_p50 python=   81.53 (IQR 103.44)  rust=   79.54 (IQR 207.74)  delta=  -2.4%
+  sglang  conc=  8 itl_p50  python=    5.25 (IQR 0.41)  rust=    5.42 (IQR 0.17)  delta=  +3.2%
+  sglang  conc=  8 itl_p99  python=   46.55 (IQR 0.44)  rust=   46.36 (IQR 0.02)  delta=  -0.4%
+  sglang  conc=  8 e2e_p50  python=  277.65 (IQR 103.08)  rust=  275.06 (IQR 207.00)  delta=  -0.9%
+  sglang  conc=  8 stream_span python=  189.63 (IQR 10.00)  rust=  189.60 (IQR 9.84)  delta=  -0.0%  (delta-count invariant)
+  sglang  conc= 64 deltas/req: python=10.4 rust=10.4 ratio=1.00x
+  sglang  conc= 64 ttft_p50 python=  223.65 (IQR 355.08)  rust=  249.87 (IQR 434.01)  delta= +11.7%
+  sglang  conc= 64 itl_p50  python=   10.98 (IQR 1.28)  rust=   12.54 (IQR 2.45)  delta= +14.2%
+  sglang  conc= 64 itl_p99  python=   86.38 (IQR 2.82)  rust=  103.70 (IQR 5.60)  delta= +20.1%
+  sglang  conc= 64 e2e_p50  python=  606.13 (IQR 355.24)  rust=  678.20 (IQR 448.60)  delta= +11.9%
+  sglang  conc= 64 stream_span python=  367.35 (IQR 19.76)  rust=  395.32 (IQR 19.12)  delta=  +7.6%  (delta-count invariant)
+  sglang  conc=256 deltas/req: python=10.4 rust=10.4 ratio=1.00x
+  sglang  conc=256 ttft_p50 python=  664.21 (IQR 16.36)  rust=  752.21 (IQR 138.04)  delta= +13.2%
+  sglang  conc=256 itl_p50  python=   24.78 (IQR 1.31)  rust=   24.32 (IQR 2.63)  delta=  -1.8%
+  sglang  conc=256 itl_p99  python=  125.87 (IQR 5.59)  rust=  133.26 (IQR 9.12)  delta=  +5.9%
+  sglang  conc=256 e2e_p50  python= 1207.99 (IQR 49.54)  rust= 1340.25 (IQR 139.57)  delta= +10.9%
+  sglang  conc=256 stream_span python=  515.85 (IQR 30.18)  rust=  562.56 (IQR 29.92)  delta=  +9.1%  (delta-count invariant)
+  sglang  conc=  8 deltas/req: python=10.2 stock=10.2 ratio=1.00x
+  sglang  conc=  8 ttft_p50 python=   81.53 (IQR 103.44)  stock=   73.75 (IQR 203.85)  delta=  -9.5%
+  sglang  conc=  8 itl_p50  python=    5.25 (IQR 0.41)  stock=    5.34 (IQR 0.06)  delta=  +1.7%
+  sglang  conc=  8 itl_p99  python=   46.55 (IQR 0.44)  stock=   46.52 (IQR 0.25)  delta=  -0.1%
+  sglang  conc=  8 e2e_p50  python=  277.65 (IQR 103.08)  stock=  269.31 (IQR 203.60)  delta=  -3.0%
+  sglang  conc=  8 stream_span python=  189.63 (IQR 10.00)  stock=  189.88 (IQR 9.83)  delta=  +0.1%  (delta-count invariant)
+  sglang  conc= 64 deltas/req: python=10.4 stock=10.4 ratio=1.00x
+  sglang  conc= 64 ttft_p50 python=  223.65 (IQR 355.08)  stock=  219.97 (IQR 368.60)  delta=  -1.6%
+  sglang  conc= 64 itl_p50  python=   10.98 (IQR 1.28)  stock=   11.28 (IQR 0.10)  delta=  +2.7%
+  sglang  conc= 64 itl_p99  python=   86.38 (IQR 2.82)  stock=   94.74 (IQR 10.77)  delta=  +9.7%
+  sglang  conc= 64 e2e_p50  python=  606.13 (IQR 355.24)  stock=  626.16 (IQR 396.04)  delta=  +3.3%
+  sglang  conc= 64 stream_span python=  367.35 (IQR 19.76)  stock=  367.34 (IQR 26.36)  delta=  -0.0%  (delta-count invariant)
+  sglang  conc=256 deltas/req: python=10.4 stock=10.4 ratio=1.00x
+  sglang  conc=256 ttft_p50 python=  664.21 (IQR 16.36)  stock=  662.00 (IQR 46.04)  delta=  -0.3%
+  sglang  conc=256 itl_p50  python=   24.78 (IQR 1.31)  stock=   25.29 (IQR 4.67)  delta=  +2.1%
+  sglang  conc=256 itl_p99  python=  125.87 (IQR 5.59)  stock=  118.62 (IQR 17.24)  delta=  -5.8%
+  sglang  conc=256 e2e_p50  python= 1207.99 (IQR 49.54)  stock= 1179.61 (IQR 38.05)  delta=  -2.3%
+  sglang  conc=256 stream_span python=  515.85 (IQR 30.18)  stock=  514.00 (IQR 34.05)  delta=  -0.4%  (delta-count invariant)

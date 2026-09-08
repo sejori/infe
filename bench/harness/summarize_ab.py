@@ -37,7 +37,7 @@ for (e, a, c), d in sorted(rows.items()):
     print(f"{e:7} {a:6} {c:4d} {med(d['ttft_p50']):9.1f} {med(d['itl_p50']):8.2f} {med(d['itl_p99']):8.1f} {med(d['e2e_p50']):8.0f} {med(d['chunks_per_s']):8.0f} {med(d['cpu']):5.0f} {d['errors']:4d} {d['calls']:5d} {d['args_ok']:7d} {d['has_id']:6d} {dpr:10.1f}")
 
 # Determine the baseline arm for comparison
-arms_present = sorted(set(a for (_, a, _) in rows.keys() if _[0] == "sglang"))
+arms_present = sorted(set(a for (eng, a, _c) in rows.keys() if eng == "sglang"))  # `_` was rebound to conc (int) and then subscripted
 # For the infe-kv probe, baseline is "python" (0.5.19 Python TreeCore) when present, else "stock"
 baseline = "python" if "python" in arms_present else ("stock" if "stock" in arms_present else arms_present[0] if arms_present else None)
 

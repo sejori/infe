@@ -115,3 +115,87 @@ This is Round 6: the **infe-kv probe round**. It benchmarks:
 If `rust` ~= `python` on `stream_span` and CPU, the component is dead. If `rust`
 beats `python`, we have a data point for where an external implementation
 could compete with SGLang's own code.
+
+---
+
+# Round 6 — the probe, run 2026-09-08
+
+Three arms, SGLang only, same workload/model/GPU as rounds 2–5, 3 rounds per level.
+Raw data: `bench/results/rtx4090-20260908-round6/`.
+
+## Setup corrections made before the run
+
+Two pre-flight problems would have invalidated the round:
+
+1. **`lmsysorg/sglang:latest` moved to 0.5.19 on 2026-09-05.** The driver selected `latest` for *every* arm, so
+   `stock` would have been 0.5.19 and the stock-vs-python control would have compared an image with itself.
+   Arms are now pinned explicitly: `stock` → `v0.5.18`, `rust`/`python` → `v0.5.19`.
+2. **The Rust TreeCore only exists inside the *unified* radix tree.** In 0.5.18 `default_radix_cache_factory`
+   fell through to plain `RadixCache` for a dense model like Qwen2.5, so the env var would have been a no-op.
+   In 0.5.19 the final fallback changed to `_create_unified_radix_cache`, so it does engage. Verified.
+
+Backend resolution verified directly, CPU-only:
+
+```
+SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python → _python_tree_core_factory
+SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=rust   → _rust_tree_core_factory
+```
+
+Note that 0.5.18 → 0.5.19 changed the default cache *class* (plain → unified), not just the version, so
+`stock` vs `python` mixes two effects. The clean comparison is **`python` vs `rust`, both on 0.5.19**.
+
+## Results (median of 3 rounds)
+
+All three arms use the stock `qwen25` tool parser, so `deltas/req` is identical (10.2 / 10.4) across arms —
+**no granularity confound**. This is the cleanest comparison in the project so far.
+
+| arm | conc | TTFT p50 | ITL p50 | ITL p99 | e2e p50 | **stream_span** | CPU% |
+|---|---|---|---|---|---|---|---|
+| stock (0.5.18) | 8 | 73.8 | 5.34 | 46.5 | 269 | 189.9 | 152 |
+| python (0.5.19) | 8 | 81.5 | 5.25 | 46.6 | 278 | 189.6 | 172 |
+| rust (0.5.19) | 8 | 79.5 | 5.42 | 46.4 | 275 | 189.6 | 161 |
+| stock | 64 | 220.0 | 11.28 | 94.7 | 626 | 367.3 | 152 |
+| python | 64 | 223.7 | 10.98 | 86.4 | 606 | 367.4 | 172 |
+| rust | 64 | 249.9 | 12.54 | 103.7 | 678 | **395.3** | 161 |
+| stock | 256 | 662.0 | 25.29 | 118.6 | 1180 | 514.0 | 152 |
+| python | 256 | 664.2 | 24.78 | 125.9 | 1208 | 515.9 | 172 |
+| rust | 256 | 752.2 | 24.32 | 133.3 | 1340 | **562.6** | 161 |
+
+## Reading
+
+1. **The engine-version control is clean.** stock (0.5.18) vs python (0.5.19) on `stream_span`: +0.1 %, −0.0 %,
+   −0.4 %. The 0.5.18→0.5.19 change, including the switch to the unified cache class, is a no-op for this
+   workload. Any python-vs-rust difference is therefore the TreeCore backend.
+2. **The Rust TreeCore is slower than Python at concurrency.** `stream_span` +7.6 % at conc 64 and +9.1 % at
+   conc 256; e2e +11.9 % and +10.9 %; TTFT +11.7 % and +13.2 %. IQRs are ~19–30 ms against differences of
+   28–47 ms, so the gap is larger than the spread at both levels. At conc 8 the arms are identical (−0.0 %).
+3. **Rust uses less CPU while being slower**: 161 % vs 172 % (−6 %). Lower CPU with longer wall time points at
+   the backend blocking rather than computing — PyO3 boundary crossings, GIL round-trips or lock behaviour —
+   not at the tree algorithm being slow. That is the same class of cost we measured on `infe-parsers`.
+4. **This confirms the M0 decision with our own data.** SGLang's own C++ attempt showed microbenchmark wins and
+   zero end-to-end change; their Rust replacement ships with no published end-to-end numbers. On our hardware
+   the Rust backend is a net regression at concurrency.
+
+## Limitation — state this whenever the result is quoted
+
+Our workload has only a **short shared prefix** (system prompt + tools JSON schema, order hundreds of tokens),
+not the 61 K-token shared prefix SGLang used. So this round measures the Rust backend's **overhead**, not its
+**benefit**: it shows the backend costs something when the cache is not under pressure, and does not test
+whether it pays off when the cache is. A prefix-heavy workload would be needed to claim the latter — but that
+is precisely the regime the C++ PR already tested end-to-end and found flat.
+
+## Verdict — `infe-kv` is confirmed dead
+
+The M0 kill criterion was met from SGLang's own PRs; Round 6 confirms it independently on our hardware. Native
+code in the radix cache does not make this engine faster, and in the opt-in Rust implementation that ships
+today it makes it measurably slower at concurrency. **Do not build `infe-kv`.**
+
+Two things worth extracting rather than discarding:
+
+- **A reportable finding for the SGLang maintainers.** Their Rust TreeCore's end-to-end benchmarking is an
+  explicitly "planned follow-up"; we have a clean three-arm measurement showing a 7.6–9.1 % `stream_span`
+  regression at conc 64/256 on a small dense model, with a pinned repro. That is worth filing.
+- **The component-ranking lesson, now twice-confirmed.** Both components that touched the CPU-side path around
+  GPU decode (`infe-parsers`, `infe-kv`) were flat or negative, because decode dominates and the CPU work is
+  single-digit percent of the step. Before starting `infe-sched` (BRIEF §6.3), profile first and apply the same
+  kill criterion — the prior is now that it will also be flat.

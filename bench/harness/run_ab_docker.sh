@@ -38,9 +38,11 @@ else
   # SGLang: select image tag based on arm.
   # stock/infe use 0.5.18 (the pinned version from the parser rounds).
   # rust/python use latest which is 0.5.19+ (the first release shipping the Rust TreeCore).
+  # Pin explicitly: `latest` moved to 0.5.19 on 2026-09-05, which would have made
+  # the stock arm 0.5.19 as well and collapsed the stock/python control.
   case $ARM in
-    stock|infe) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-latest} ;;
-    rust|python) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-latest} ;;
+    stock|infe) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-v0.5.18} ;;
+    rust|python) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-v0.5.19} ;;
   esac
   IMG=lmsysorg/sglang:$SGLANG_IMG_TAG
   ARGS=(--model-path $MODEL --port 8000 --host 0.0.0.0 --context-length 4096 --mem-fraction-static 0.85)
