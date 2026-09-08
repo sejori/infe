@@ -1,4 +1,4 @@
-# Next-wave task list — handover (updated 2026-09-07)
+# Next-wave task list — handover (updated 2026-09-08)
 
 ## Where the project is
 
@@ -7,31 +7,58 @@ either engine faster. Round 5 scored M1 honestly — criteria (1) drop-in, (2) p
 (3) measured improvement is not. Full numbers and reasoning: `docs/review-2026-09-04.md` §"Round 5".
 
 Do not spend more rounds tuning it for speed. Parsing sits on the SSE path, not between GPU batches; the
-component's real value was proving manifest → crate → wheel → shim → conformance → A/B end to end on two
+component's real value was proving manifest -> crate -> wheel -> shim -> conformance -> A/B end to end on two
 engines, which it did.
 
-## Next component: `infe-kv`
+## infe-kv: killed at M0
 
-**Brief: `docs/infe-kv-brief.md`** — read that, not this file, to start work. Headlines:
+**Do not build `infe-kv`.** Full findings: `docs/infe-kv-m0-findings.md`.
 
-- **SGLang is now the primary target, not vLLM.** SGLang 0.5.18 ships a public
-  `register_radix_cache_backend(name, factory)` registry with a `--radix-cache-backend` flag and a working
-  third-party reference implementation (FlexKV). The original BRIEF §6.2 assumption — vLLM connector proven,
-  SGLang a documented gap — is now inverted and wrong.
-- **vLLM's allocator is still not pluggable** (`scheduler.py:277` hard-constructs `KVCacheManager`); its
-  KV-connector seam is about moving KV, not allocating it. Out of scope without an upstream RFC.
-- **SGLang already has a C++ radix tree**, gated off behind `SGLANG_EXPERIMENTAL_CPP_RADIX_TREE`. Find out why
-  it is still experimental before building a third implementation — that git-log read may end the component.
-- **M0 is a measurement with a kill criterion, not an implementation.** Profile how much scheduler CPU the
-  radix cache actually consumes under a *prefix-heavy* workload (the current benchmark has no shared prefixes,
-  so it would measure nothing). If < 5 % and the C++ arm shows no end-to-end win, stop and write it up.
+The M0 kill criterion was met before writing any code:
+
+1. SGLang's own C++ radix tree (PR #36128, closed) showed microbenchmark wins
+   (match_prefix -29%, insert finalization -229x) but **zero end-to-end improvement**
+   (C++ 3799 tok/s vs Python 3821 tok/s, within run-to-run variance).
+2. SGLang replaced the C++ attempt with a **Rust TreeCore** (PR #32710, merged),
+   shipped in **v0.5.19** (released 2026-09-05). Opt-in via
+   `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=rust`. 2,436 shared parity tests pass.
+3. **No published end-to-end numbers** for the Rust TreeCore — because the
+   C++ numbers already showed the radix cache is not on the critical path.
+4. The engine now ships a native Rust TreeCore. An external `infe-kv` would
+   mean competing with SGLang's own Rust code on their engine — not a drop-in.
+
+The single remaining useful action is **Round 6**: a three-arm A/B
+(`stock` 0.5.18 vs `python` 0.5.19 vs `rust` 0.5.19) to confirm the
+finding on our hardware. The harness is updated to support `rust` and
+`python` arms; see below.
+
+## Round 6: the infe-kv probe (harness ready, needs GPU)
+
+Run on the RTX 4090:
+
+```bash
+export INFE_BENCH_DIR=~/infe-bench; cd $INFE_BENCH_DIR
+# Three SGLang arms: stock (0.5.18), python (0.5.19 control), rust (0.5.19 Rust TreeCore)
+for spec in "sglang stock 18000" "sglang python 18001" "sglang rust 18002"; do set -- $spec
+  PORT=$3 ROUNDS=3 $INFE_BENCH_DIR/run_ab_docker.sh $1 $2 0 8 64 256; done
+(cd $INFE_BENCH_DIR/results && python3 summarize_ab.py "sglang_*.json")
+```
+
+The `stock` and `infe` arms use `lmsysorg/sglang:latest` (currently 0.5.18).
+The `rust` and `python` arms also use `:latest` — they expect v0.5.19+ to be
+the latest tag. If `:latest` hasn't updated to 0.5.19 yet, pull explicitly:
+`docker pull lmsysorg/sglang:v0.5.19` and set `SGLANG_IMAGE_TAG=v0.5.19`.
+
+Expected result: `rust` ~= `python` on `stream_span` and CPU, confirming the
+radix cache is not on the critical path. If `rust` beats `python`, the M0
+kill is invalidated and infe-kv should be reconsidered.
 
 ## Carried-over items (small, not blocking)
 
 | # | Where | What |
 |---|---|---|
 | B7 | `crates/infe-parsers/src/types.rs` | Ids are index-derived, so every request's first call shares an id. Unique within a message (what the API requires) but collides across a conversation. Use a random, seedable generator. |
-| D4b | `bench/harness/cpu_sampler.py` | Now cgroup-wide (all container PIDs), verified at 101 % on a single-threaded busy loop. Still only 5–13 samples per run; drop the interval to 0.25 s or lengthen runs before quoting CPU. |
+| D4b | `bench/harness/cpu_sampler.py` | Now cgroup-wide (all container PIDs), verified at 101% on a single-threaded busy loop. Still only 5-13 samples per run; drop the interval to 0.25s or lengthen runs before quoting CPU. |
 | D7 | `bench/harness/run_ab_docker.sh` | The sampler exits only when the container disappears, so the driver kills it before `wait`. A `--stop-file`/`--duration` would be cleaner. |
 | C | conformance | 14 Rust fixtures, all synthetic. Both round-4 blockers were *shim* bugs that no Rust fixture can catch; the off-GPU probes (`bench/harness/parity_probe_*.py`, `probe_feed_trace.py`) caught both in ~1 min each. Promote them to a CI job that runs inside the pinned engine images — that is the highest-value testing work outstanding. |
 
@@ -44,67 +71,49 @@ engines, which it did.
 
 ---
 
-# Appendix — historical task list (infe-parsers, rounds 1–5)
+# Appendix — historical task list (infe-parsers, rounds 1-5)
 
 ## A. Make the infe arms run at all (engine-side, small)
 
 | # | File | Change | Evidence |
 |---|---|---|---|
-| A1 | `shims/vllm/infe_parsers/__init__.py` | Import `DeltaFunctionCall, DeltaMessage, DeltaToolCall, ExtractedToolCallInformation, FunctionCall, ToolCall` with a try/except: `vllm.entrypoints.generate.base.protocol` (main) → fallback `vllm.entrypoints.openai.engine.protocol` (≤0.28.0). Drop the inline import inside `extract_tool_calls`. | `diff -u shims/vllm/infe_parsers/__init__.py bench/results/rtx4090-20260904/scratch/vllm_shim.py` |
+| A1 | `shims/vllm/infe_parsers/__init__.py` | Import `DeltaFunctionCall, DeltaMessage, DeltaToolCall, ExtractedToolCallInformation, FunctionCall, ToolCall` with a try/except: `vllm.entrypoints.generate.base.protocol` (main) -> fallback `vllm.entrypoints.openai.engine.protocol` (<=0.28.0). Drop the inline import inside `extract_tool_calls`. | `diff -u shims/vllm/infe_parsers/__init__.py bench/results/rtx4090-20260904/scratch/vllm_shim.py` |
 | A2 | same | `DeltaMessage(tool_calls=delta_tool_calls)` — always a list; 0.28 rejects `None` with a pydantic error on every stream. | same diff |
-| A3 | `shims/sglang/infe_parsers/__init__.py` | Implement abstract `structure_info(self)` on the detector (mirror `HermesDetector`: `StructureInfo(begin='<tool_call>{"name":"'+name+'", "arguments":', end='}</tool_call>', trigger='<tool_call>')`). Without it `FunctionCallParser` cannot instantiate the class → HTTP 500 on every request. | `diff -u shims/sglang/infe_parsers/__init__.py bench/results/rtx4090-20260904/scratch/sglang_shim.py` |
-| A4 | new `python/infe-parsers/python/infe_parsers/shims/sglang/launch.py` | File-based launcher (not `-c`/stdin — multiprocessing spawn re-imports `__main__` from path): under `if __name__ == "__main__":` import the shim, then `runpy.run_module("sglang.launch_server", run_name="__main__")`. SGLang validates `--tool-call-parser` against `FunctionCallParser.ToolCallParserEnum` *at arg-parse time*, so the shim must be imported first. | `bench/results/rtx4090-20260904/scratch/launch_sglang.py` |
-| A5 | `shims/*/infe_parsers/` | Rename: these packages are literally named `infe_parsers` and shadow the wheel if ever on `sys.path`. Move them inside the wheel as `infe_parsers.shims.vllm` / `infe_parsers.shims.sglang` (the docstrings already claim that path). vLLM's `--tool-parser-plugin` accepts a module name or a file path (`import_plugin`). | review §3 |
+| A3 | `shims/sglang/infe_parsers/__init__.py` | Implement abstract `structure_info(self)` on the detector (mirror `HermesDetector`). Without it `FunctionCallParser` cannot instantiate the class. | `diff -u shims/sglang/infe_parsers/__init__.py bench/results/rtx4090-20260904/scratch/sglang_shim.py` |
+| A4 | new `python/infe-parsers/python/infe_parsers/shims/sglang/launch.py` | File-based launcher (not `-c`/stdin — multiprocessing spawn re-imports `__main__` from path). | `bench/results/rtx4090-20260904/scratch/launch_sglang.py` |
+| A5 | `shims/*/infe_parsers/` | Rename: these packages shadow the wheel if ever on `sys.path`. Moved inside the wheel as `infe_parsers.shims.vllm` / `infe_parsers.shims.sglang`. | review §3 |
 
-Acceptance: `vllm serve … --tool-call-parser infe_hermes --tool-parser-plugin infe_parsers.shims.vllm` and
-`python -m infe_parsers.shims.sglang.launch … --tool-call-parser infe_hermes` both serve a streamed tool call with HTTP 200.
+**Acceptance**: `vllm serve ... --tool-call-parser infe_hermes --tool-parser-plugin infe_parsers_vllm` and
+`python -m infe_parsers_sglang.launch ... --tool-call-parser infe_hermes` both serve a streamed tool call with HTTP 200.
 
 ## B. Make the Rust parser output-compatible (the real work)
 
-Measured against stock on identical text (review §2): arguments wrong, duplicated, no id, second call merged.
+All items B1-B8 are **done** as of round 5. Kept for reference.
 
-| # | File | Change |
-|---|---|---|
-| B1 | `crates/infe-parsers/src/dialects/hermes.rs::extract_name` | Return the `arguments` **sub-object** serialised, not `json_str.to_string()`. Same for `llama3_json.rs` (`parameters`). |
-| B2 | `hermes.rs` streaming | Emit `arguments_fragment` as the **diff of the arguments object** (vLLM `hermes_tool_parser.py` semantics: partial-JSON parse, send only newly-stable suffix), not raw bytes including `{"name":`. Do not re-send the buffer on the close marker; the completion delta carries no arguments. |
-| B3 | `types.rs` / all dialects | Assign `state.id` (`"call_" + 24 random alnum`, or accept an injected generator so parity tests are deterministic) on the first delta of each call; assign `state.index` and increment per completed call; reset `arguments_buffer`/`name_buffer` after `</tool_call>`. Today neither `id` nor `index` is ever set. |
-| B4 | `parser.rs` | `finish()` must close an open tool call the way stock does (emit what is parseable, mark complete). |
-| B5 | reasoning | `deepseek_reasoning` must be exposed through the engines' **reasoning** interfaces (vLLM `--reasoning-parser` + `--reasoning-parser-plugin`, class in `vllm.reasoning`; SGLang `ReasoningParser.DetectorMap`), not the tool registry. |
-
-Acceptance: the CPU-only probe in review §2 prints identical `calls=[…]` for `hermes` and `infe_hermes`, non-streaming and
-streaming, including two consecutive tool calls; e2e client shows `args_ok == calls == 2×requests` and `has_id == calls`.
-
-| B6 | `hermes.rs` | **Marker-less continuation calls.** After a completed `</tool_call>`, Qwen2.5 (under SGLang's template) emits the next call as bare JSON with no `<tool_call>` opener, then a stray `}`. Stock `qwen25`/`hermes` parse it as call #2; infe streams it as content. Treat a `{` at Idle after ≥1 completed call as a new call (as stock does), and drop the trailing `}`. Raw SSE evidence in review "Round 2" §2. |
-| B7 | `types.rs::make_tool_call_id` | Random ids (vLLM: `chatcmpl-tool-<16 hex>`, SGLang: `call_<uuid>`), not index-derived; keep a seedable generator for tests. |
-| A6 | manifest + README + driver | vLLM 0.28 `--tool-parser-plugin` = **file path only** (`import_tool_parser` → `import_from_path`); module names work only on `main`. Document both; driver already passes the path. Set `parity.streaming_diff: false` until B2 lands. |
-
-**B2, spelled out** (the remaining core task): inside `InToolCall`, after the `"arguments":` key is seen, run a partial-JSON
-validator on the accumulating buffer each feed and emit `arguments_fragment` = newly-stable suffix (what vLLM's
-`hermes_tool_parser.py` does with `partial_json_parser`, what SGLang's `BaseFormatDetector` does with `_find_common_prefix`);
-emit `name` + `id` as soon as the name field is complete, not at the close marker. Acceptance: same delta *count and
-content* as stock on the token-boundary replay in review "Round 2" (stock: 9–20 deltas/call; infe today: 1).
+| # | File | Change | Status |
+|---|---|---|---|
+| B1 | `hermes.rs::extract_name` | Return the `arguments` sub-object, not the wrapper. | done |
+| B2 | `hermes.rs` streaming | Emit `arguments_fragment` as the diff (partial-JSON semantics, matching vLLM's `hermes_tool_parser.py`). | done (round 3) |
+| B3 | `types.rs` / all dialects | Assign `state.id` and `state.index` on first delta per call. | done |
+| B4 | `parser.rs` | `finish()` closes an open tool call the way stock does. | done |
+| B5 | reasoning | `deepseek_reasoning` through engines' reasoning interfaces. | pending (not blocking) |
+| B6 | `hermes.rs` | Marker-less continuation calls (bare `{` after completed call). | done |
+| B7 | `types.rs::make_tool_call_id` | Random ids, not index-derived. | pending (small) |
+| B8 | SGLang shim | Nameless argument fragments forwarded, not dropped. | done |
 
 ## C. Conformance that would have caught B
 
-- Mine fixtures from `vllm/tests/tool_use/` and `tests/entrypoints/openai/tool_parsers/` and SGLang `test/srt/function_call/`
-  (record `source:`); include multi-call, split-marker, nested-JSON-in-string, and reasoning+tool cases.
-- Fixture `expected_tool_calls[].arguments` must be set and asserted (currently `null` → skipped). Assert content
-  equality, not `contains`. Assert `index` and presence of `id`.
-- Add a Python-level parity test that runs both engines' stock parsers and the shim over the fixtures inside the pinned
-  engine containers (this is the "parity matrix"; CI job below).
+- Mine fixtures from `vllm/tests/tool_use/` and `tests/entrypoints/openai/tool_parsers/` and SGLang `test/srt/function_call/`.
+- Fixture `expected_tool_calls[].arguments` must be set and asserted (currently `null` -> skipped).
+- Promote off-GPU parity probes to a CI job running inside pinned engine images.
 
 ## D. Harness and CI
 
-- `bench/harness/{e2e_tool_stream.py, run_ab_docker.sh, summarize_ab.py}` are committed; wire `run_ab_docker.sh` to
-  the wheel-internal shims once A5 lands (today it mounts `$INFE_BENCH_DIR/shims`).
-- CI: add a maturin job (`ghcr.io/pyo3/maturin`, abi3 wheel artefact) and a conformance job that installs the wheel into
-  `vllm/vllm-openai:<pin>` and `lmsysorg/sglang:<pin>` and runs the parity test; nightly variant against `:latest`
-  reporting drift without failing.
-- Replace docker-stats CPU sampling with a 1 s psutil sampler on the container's API-server pid; docker stats gave 2–5
-  samples per run.
-- Delete or relabel `bench/results/{hermes,llama3_json,deepseek_reasoning}_ab.json` (Rust vs a hand-written Python toy).
-- `infe-core` is unused by `infe-parsers`; either use it or stop listing it as a dependency and don't describe it as used.
-- `registry/infe-parsers/manifest.yaml` exists; correct `streaming_diff`, plugin-path note, and `fixture_count`/`source` as they change (D5).
+- `bench/harness/{e2e_tool_stream.py, run_ab_docker.sh, summarize_ab.py}` are committed.
+- Round 6: harness updated to support `rust` and `python` SGLang arms for the infe-kv probe.
+- CI: fmt/clippy/test/conformance jobs all green.
+- Still needed: Python-level conformance job testing shims end-to-end against a live engine.
+- `infe-core` is unused; either use it or stop listing it as a dependency.
 
 ## E. Reproduce the benchmark (any Linux box with an NVIDIA GPU, Docker, nvidia-container-toolkit)
 
@@ -119,18 +128,3 @@ for spec in "vllm stock 18001" "vllm infe 18001" "sglang stock 18000" "sglang in
   PORT=$3 ROUNDS=3 $INFE_BENCH_DIR/run_ab_docker.sh $1 $2 <gpu-index> 8 64 256; done
 (cd $INFE_BENCH_DIR/results && python3 /path/to/bench/harness/summarize_ab.py "*.json")
 ```
-Gotchas hit on the way: pick a free host port (8000 was taken); the HF cache dir must be writable by the container's
-uid; `vllm serve` wants the model positional and no longer accepts `--disable-log-requests`; the maturin container
-must write to a mounted `/out`, not a relative path.
-
-## F. Facts verified this session (so nobody re-derives them)
-
-- vLLM 0.28.0 (`vllm/vllm-openai:latest`, sha256:61fc8a89…): `--tool-parser-plugin` → `import_plugin()` accepts module
-  name or file path; `ToolParserManager.register_module` is honoured by the new `vllm.parser.parser_manager`;
-  `api_server` validates `--tool-call-parser` against `ToolParserManager.list_registered()` when
-  `--enable-auto-tool-choice`. Streaming calls `extract_tool_calls_streaming` once per delta.
-- SGLang 0.5.18 (`lmsysorg/sglang:latest`, sha256:9e148f5a…): `--tool-call-parser` choices = `["auto"] +
-  ToolCallParserEnum.keys()` at parse time; `qwen25` is the stock parser for Qwen2.5 (Hermes-style tags);
-  `BaseFormatDetector` requires `structure_info`; `parse_streaming_increment(new_text, tools)` per delta.
-- Stock parsers' 46–154 ms ITL p99 spikes are deliberate buffering for partial-JSON validity + argument diffing, not
-  CPU cost. A Rust parser must implement the same semantics before its latency can be compared.

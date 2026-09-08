@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
-# Drive one arm (stock|infe) of one engine (vllm|sglang) in Docker on a chosen GPU, run the
-# e2e client, snapshot container CPU, tear down. Any Linux host with Docker + the NVIDIA container toolkit.
+# Drive one arm of one engine in Docker on a chosen GPU, run the e2e client, snapshot
+# container CPU, tear down. Any Linux host with Docker + the NVIDIA container toolkit.
+#
 # Layout under $INFE_BENCH_DIR (default ~/infe-bench): hf/ wheels/ shims/ results/ plus this script
 # and e2e_tool_stream.py and cpu_sampler.py.
+#
 # Usage: INFE_BENCH_DIR=... PORT=18000 ROUNDS=3 run_ab_docker.sh <engine> <arm> <gpu> [concurrency list...]
+#
+# Arms:
+#   vllm:   stock | infe
+#   sglang: stock | infe | rust | python
+#     stock  -- lmsysorg/sglang:latest on 0.5.18, Python TreeCore (default), qwen25 tool parser
+#     rust   -- lmsysorg/sglang:latest on 0.5.19, Rust TreeCore (SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=rust)
+#     python -- lmsysorg/sglang:latest on 0.5.19, Python TreeCore (control: isolates 0.5.18->0.5.19 engine changes)
+#     infe   -- lmsysorg/sglang:latest on 0.5.18, infe tool parser shim
+#
+# Set SGLANG_IMAGE_TAG to override the Docker image tag (default: latest).
 set -euo pipefail
 ENGINE=$1; ARM=$2; GPU=$3; shift 3; CONC=${*:-"8 64 256"}
 MODEL=${MODEL:-Qwen/Qwen2.5-1.5B-Instruct}; PORT=${PORT:-8000}; ROUNDS=${ROUNDS:-3}
 B=${INFE_BENCH_DIR:-$HOME/infe-bench}; HF=$B/hf; SHIMS=$B/shims
+SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-latest}
 NAME=infe-$ENGINE-$ARM; OUT=$B/results/${ENGINE}_${ARM}_$(date +%Y%m%d-%H%M%S).json
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
 docker rm -f $NAME >/dev/null 2>&1 || true
@@ -22,17 +35,34 @@ if [ $ENGINE = vllm ]; then
     docker run -d "${COMMON[@]}" --entrypoint bash $IMG -c "pip install -q /wheels/*.whl && python3 -c 'import infe_parsers; print(\"infe_parsers\", infe_parsers.__version__)' && exec env PYTHONPATH=/shims/vllm vllm serve ${ARGS[*]} --tool-call-parser infe_hermes --tool-parser-plugin /shims/vllm/infe_parsers_vllm/__init__.py"  # 0.28 import_tool_parser() takes a FILE path only; main also accepts a module name >/dev/null
   fi
 else
-  IMG=lmsysorg/sglang:latest
+  # SGLang: select image tag based on arm.
+  # stock/infe use 0.5.18 (the pinned version from the parser rounds).
+  # rust/python use latest which is 0.5.19+ (the first release shipping the Rust TreeCore).
+  case $ARM in
+    stock|infe) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-latest} ;;
+    rust|python) SGLANG_IMG_TAG=${SGLANG_IMAGE_TAG:-latest} ;;
+  esac
+  IMG=lmsysorg/sglang:$SGLANG_IMG_TAG
   ARGS=(--model-path $MODEL --port 8000 --host 0.0.0.0 --context-length 4096 --mem-fraction-static 0.85)
   if [ $ARM = stock ]; then
     docker run -d "${COMMON[@]}" $IMG python3 -m sglang.launch_server "${ARGS[@]}" --tool-call-parser qwen25 >/dev/null
+  elif [ $ARM = rust ]; then
+    # SGLang 0.5.19+ ships a Rust TreeCore backend, opt-in via env var.
+    # Uses the stock qwen25 tool parser -- this arm measures radix-cache backend only.
+    docker run -d "${COMMON[@]}" -e SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=rust \
+      $IMG python3 -m sglang.launch_server "${ARGS[@]}" --tool-call-parser qwen25 >/dev/null
+  elif [ $ARM = python ]; then
+    # Control arm: same image as rust (0.5.19) but Python TreeCore (default).
+    # Isolates engine-version changes from the Rust TreeCore effect.
+    docker run -d "${COMMON[@]}" -e SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python \
+      $IMG python3 -m sglang.launch_server "${ARGS[@]}" --tool-call-parser qwen25 >/dev/null
   else
     docker run -d "${COMMON[@]}" -e PYTHONPATH=/shims/sglang $IMG bash -c "pip install -q /wheels/*.whl && exec python3 -m infe_parsers_sglang.launch ${ARGS[*]} --tool-call-parser infe_hermes" >/dev/null
   fi
 fi
 echo "waiting for $NAME on :$PORT"; for i in $(seq 1 180); do curl -sf http://127.0.0.1:$PORT/v1/models >/dev/null 2>&1 && break; sleep 2; done
 curl -sf http://127.0.0.1:$PORT/v1/models >/dev/null || { echo "server failed to start"; docker logs --tail 60 $NAME; docker rm -f $NAME; exit 1; }
-docker logs $NAME 2>&1 | grep -iE "infe|version|Registered" | head -5 || true
+docker logs $NAME 2>&1 | grep -iE "infe|version|Registered|radix.*backend\|tree.*core\|TreeCore" | head -5 || true
 # D4: CPU sampler using /proc/PID/stat at 1s intervals (replaces docker stats)
 python3 "$HARNESS/cpu_sampler.py" --container-name $NAME --output ${OUT%.json}.cpu.txt --interval 1.0 &
 SAMPLER_PID=$!
