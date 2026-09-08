@@ -9,6 +9,9 @@ Reads sched_probe_*.json (and .cpu.txt, .timer.json sidecars) and prints:
 
 Usage:
     python3 summarize_sched_probe.py 'sched_probe_*.json'
+
+Note: the glob matches .timer.json files too. Files without a "levels" key
+(timer sidecars) are loaded as timer data, not as e2e reports.
 """
 import glob
 import json
@@ -32,10 +35,18 @@ def iqr(xs):
 def load_reports(pattern):
     rows = defaultdict(dict)
     for f in sorted(glob.glob(pattern)):
+        # Skip timer sidecar files — they are loaded explicitly below.
+        if ".timer." in f or ".cpu." in f:
+            continue
+
         r = json.load(open(f))
         basename = f.rsplit(".", 1)[0]  # strip .json
         cpu_file = basename + ".cpu.txt"
         timer_file = basename + ".timer.json"
+
+        # Skip files that don't have the e2e report structure (timer data, etc.)
+        if "levels" not in r:
+            continue
 
         cpu = []
         try:
