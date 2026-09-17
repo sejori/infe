@@ -1,5 +1,12 @@
 # Next-wave task list — handover (updated 2026-09-17)
 
+Batch-result follow-up (2026-09-17): [findings](batch-result-findings.md). The
+standalone Python ownership/replay control passes the pinned completion oracle.
+After graph tuning, non-cache result work is 3.47–4.41% of profiled wall time
+outside GPU/CUDA activity, below the native-port gate. Further work should first
+inspect cache-release ownership or profile a broader output-heavy workload and
+reuse the existing Rust server before building another transport.
+
 ## Where the project is
 
 `infe-parsers` is **done and closed**: correct, drop-in on both engines, dual-published, and it does not make

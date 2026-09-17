@@ -1,0 +1,676 @@
+{
+  "short_c8": {
+    "window_ns": 6144871808,
+    "gpu_busy_ns": 5587621720,
+    "gpu_busy_percent": 90.93146113683744,
+    "phases": {
+      "cache_evict": {
+        "ranges": 0,
+        "wall_ns": 0,
+        "gpu_overlap_ns": 0,
+        "gpu_uncovered_ns": 0,
+        "wall_percent_of_window": 0.0,
+        "gpu_uncovered_percent_of_window": 0.0,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.0,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "cache_insert": {
+        "ranges": 1024,
+        "wall_ns": 55169437,
+        "gpu_overlap_ns": 52664513,
+        "gpu_uncovered_ns": 2504924,
+        "wall_percent_of_window": 0.8978126594630499,
+        "gpu_uncovered_percent_of_window": 0.040764463088373025,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.034062972595701055,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.12746449795425904,
+          "launch": 0.0,
+          "other": 0.013742451045123576
+        }
+      },
+      "cache_match": {
+        "ranges": 1024,
+        "wall_ns": 36404902,
+        "gpu_overlap_ns": 18582899,
+        "gpu_uncovered_ns": 17822003,
+        "wall_percent_of_window": 0.5924436365394069,
+        "gpu_uncovered_percent_of_window": 0.29003050929065044,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.2600671340156296,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.06481640503573545,
+          "launch": 0.007592754000052201,
+          "other": 0.009635677008414494
+        }
+      },
+      "cache_release": {
+        "ranges": 512,
+        "wall_ns": 61301872,
+        "gpu_overlap_ns": 61062761,
+        "gpu_uncovered_ns": 239111,
+        "wall_percent_of_window": 0.9976102661766056,
+        "gpu_uncovered_percent_of_window": 0.0038912284498547507,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.0034116578270529155,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.06438389804729999,
+          "launch": 0.06451991390346674,
+          "other": 0.021213086956557062
+        }
+      },
+      "finish_actions": {
+        "ranges": 7680,
+        "wall_ns": 85525054,
+        "gpu_overlap_ns": 84814264,
+        "gpu_uncovered_ns": 710790,
+        "wall_percent_of_window": 1.391811850145597,
+        "gpu_uncovered_percent_of_window": 0.011567206317870187,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.011087635695068352,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.06438389804729999,
+          "launch": 0.06451991390346674,
+          "other": 0.021213086956557062
+        }
+      },
+      "finish_update": {
+        "ranges": 8192,
+        "wall_ns": 24852972,
+        "gpu_overlap_ns": 23217343,
+        "gpu_uncovered_ns": 1635629,
+        "wall_percent_of_window": 0.4044506179550231,
+        "gpu_uncovered_percent_of_window": 0.026617788801884798,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.026617788801884798,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "forward_launch": {
+        "ranges": 1152,
+        "wall_ns": 1957607408,
+        "gpu_overlap_ns": 1623942658,
+        "gpu_uncovered_ns": 333664750,
+        "wall_percent_of_window": 31.857579281823156,
+        "gpu_uncovered_percent_of_window": 5.429970883454433,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 3.5490299360855277,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.01339035256893027,
+          "memcpy": 0.8688020298567635,
+          "launch": 8.88725941018036,
+          "other": 0.6503970668349539
+        }
+      },
+      "ingest": {
+        "ranges": 1382,
+        "wall_ns": 22586731,
+        "gpu_overlap_ns": 4692253,
+        "gpu_uncovered_ns": 17894478,
+        "wall_percent_of_window": 0.3675704181589983,
+        "gpu_uncovered_percent_of_window": 0.29120994805299605,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.29120994805299605,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "normalize_tokens": {
+        "ranges": 1024,
+        "wall_ns": 9235582,
+        "gpu_overlap_ns": 3836116,
+        "gpu_uncovered_ns": 5399466,
+        "wall_percent_of_window": 0.15029739087439073,
+        "gpu_uncovered_percent_of_window": 0.08786946528274915,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.08786946528274915,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_pack": {
+        "ranges": 1152,
+        "wall_ns": 18477816,
+        "gpu_overlap_ns": 17900064,
+        "gpu_uncovered_ns": 577752,
+        "wall_percent_of_window": 0.3007030346173171,
+        "gpu_uncovered_percent_of_window": 0.009402181494621669,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.009402181494621669,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_send": {
+        "ranges": 1088,
+        "wall_ns": 61109753,
+        "gpu_overlap_ns": 59157557,
+        "gpu_uncovered_ns": 1952196,
+        "wall_percent_of_window": 0.9944837729640071,
+        "gpu_uncovered_percent_of_window": 0.03176951547562699,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.03176951547562699,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_stream": {
+        "ranges": 1152,
+        "wall_ns": 128355441,
+        "gpu_overlap_ns": 123069429,
+        "gpu_uncovered_ns": 5286012,
+        "wall_percent_of_window": 2.0888221107052916,
+        "gpu_uncovered_percent_of_window": 0.08602314523662069,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.08602314523662069,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "prefill_admission": {
+        "ranges": 1382,
+        "wall_ns": 106884288,
+        "gpu_overlap_ns": 5111260,
+        "gpu_uncovered_ns": 101773028,
+        "wall_percent_of_window": 1.7394063104920674,
+        "gpu_uncovered_percent_of_window": 1.6562270325558597,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 1.4818231664565265,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.10179587459996041,
+          "launch": 0.02192516039546972,
+          "other": 0.05273815469642422
+        }
+      },
+      "prepare_decode": {
+        "ranges": 1024,
+        "wall_ns": 134070069,
+        "gpu_overlap_ns": 129070458,
+        "gpu_uncovered_ns": 4999611,
+        "wall_percent_of_window": 2.1818204380676316,
+        "gpu_uncovered_percent_of_window": 0.08136233197722714,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.05963846137894892,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.21186376879418214,
+          "launch": 0.33662000846088275,
+          "other": 0.09552991800996738
+        }
+      },
+      "prepare_extend": {
+        "ranges": 128,
+        "wall_ns": 59566833,
+        "gpu_overlap_ns": 700354,
+        "gpu_uncovered_ns": 58866479,
+        "wall_percent_of_window": 0.9693747056277077,
+        "gpu_uncovered_percent_of_window": 0.9579773319821223,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.80834561813531,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.07904470836440271,
+          "launch": 0.02192516039546972,
+          "other": 0.050658111304248056
+        }
+      },
+      "result": {
+        "ranges": 1152,
+        "wall_ns": 3735710615,
+        "gpu_overlap_ns": 3682135823,
+        "gpu_uncovered_ns": 53574792,
+        "wall_percent_of_window": 60.79395521541204,
+        "gpu_uncovered_percent_of_window": 0.8718618333136104,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.5406069978018327,
+        "cuda_api_percent_of_window": {
+          "synchronise": 53.596101707318155,
+          "memcpy": 0.16952973675443678,
+          "launch": 0.1780805416600157,
+          "other": 0.051481936464182136
+        }
+      },
+      "result_decode": {
+        "ranges": 1024,
+        "wall_ns": 3576568370,
+        "gpu_overlap_ns": 3540825642,
+        "gpu_uncovered_ns": 35742728,
+        "wall_percent_of_window": 58.20411689213224,
+        "gpu_uncovered_percent_of_window": 0.5816675940003596,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.2738503344869127,
+        "cuda_api_percent_of_window": {
+          "synchronise": 53.58941398440317,
+          "memcpy": 0.06438389804729999,
+          "launch": 0.06451991390346674,
+          "other": 0.021213086956557062
+        }
+      },
+      "result_prefill": {
+        "ranges": 128,
+        "wall_ns": 120382070,
+        "gpu_overlap_ns": 104656452,
+        "gpu_uncovered_ns": 15725618,
+        "wall_percent_of_window": 1.95906560399315,
+        "gpu_uncovered_percent_of_window": 0.2559145006007585,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.23247692460242778,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.006687722914983876,
+          "memcpy": 0.10514583870713679,
+          "launch": 0.11356062775654896,
+          "other": 0.030268849507625074
+        }
+      },
+      "sample_launch": {
+        "ranges": 1382,
+        "wall_ns": 3223113,
+        "gpu_overlap_ns": 2577955,
+        "gpu_uncovered_ns": 645158,
+        "wall_percent_of_window": 0.052452078752950285,
+        "gpu_uncovered_percent_of_window": 0.010499128706966185,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.010499128706966185,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "schedule": {
+        "ranges": 1382,
+        "wall_ns": 291336269,
+        "gpu_overlap_ns": 174676742,
+        "gpu_uncovered_ns": 116659527,
+        "wall_percent_of_window": 4.741128506874785,
+        "gpu_uncovered_percent_of_window": 1.8984859350218035,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 1.6798401044853823,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.31365964339414254,
+          "launch": 0.3949694274891536,
+          "other": 0.1525005125054026
+        }
+      },
+      "update_running": {
+        "ranges": 1088,
+        "wall_ns": 155265152,
+        "gpu_overlap_ns": 149288543,
+        "gpu_uncovered_ns": 5976609,
+        "wall_percent_of_window": 2.5267435489518353,
+        "gpu_uncovered_percent_of_window": 0.09726173607428329,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.07553786547600506,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.21186376879418214,
+          "launch": 0.33662000846088275,
+          "other": 0.09552991800996738
+        }
+      },
+      "non_launch_bookkeeping": {
+        "ranges": 3916,
+        "wall_ns": 4049633615,
+        "gpu_overlap_ns": 3861504818,
+        "gpu_uncovered_ns": 188128797,
+        "wall_percent_of_window": 65.90265414044582,
+        "gpu_uncovered_percent_of_window": 3.06155771638841,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 2.511657050340211,
+        "cuda_api_percent_of_window": {
+          "synchronise": 53.596101707318155,
+          "memcpy": 0.4831893801485793,
+          "launch": 0.5730499691491693,
+          "other": 0.20398244896958476
+        }
+      }
+    }
+  },
+  "short_c256": {
+    "window_ns": 7022828587,
+    "gpu_busy_ns": 5191217368,
+    "gpu_busy_percent": 73.91918090681429,
+    "phases": {
+      "cache_evict": {
+        "ranges": 0,
+        "wall_ns": 0,
+        "gpu_overlap_ns": 0,
+        "gpu_uncovered_ns": 0,
+        "wall_percent_of_window": 0.0,
+        "gpu_uncovered_percent_of_window": 0.0,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.0,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "cache_insert": {
+        "ranges": 8195,
+        "wall_ns": 443375808,
+        "gpu_overlap_ns": 271436011,
+        "gpu_uncovered_ns": 171939797,
+        "wall_percent_of_window": 6.313350845850568,
+        "gpu_uncovered_percent_of_window": 2.4482983582751654,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 2.126075770614562,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.8502322142751738,
+          "launch": 0.0,
+          "other": 0.06349175328376842
+        }
+      },
+      "cache_match": {
+        "ranges": 8195,
+        "wall_ns": 336367221,
+        "gpu_overlap_ns": 235758763,
+        "gpu_uncovered_ns": 100608458,
+        "wall_percent_of_window": 4.789625958159528,
+        "gpu_uncovered_percent_of_window": 1.432591679458572,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 1.1822227322148935,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.5468967457228926,
+          "launch": 0.2127441929546272,
+          "other": 0.09731413653824383
+        }
+      },
+      "cache_release": {
+        "ranges": 4096,
+        "wall_ns": 444377911,
+        "gpu_overlap_ns": 183190062,
+        "gpu_uncovered_ns": 261187849,
+        "wall_percent_of_window": 6.327620067825529,
+        "gpu_uncovered_percent_of_window": 3.7191260724131356,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 3.2154833797027718,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.41015754041499003,
+          "launch": 0.3984767768901833,
+          "other": 0.06714247602068092
+        }
+      },
+      "finish_actions": {
+        "ranges": 61440,
+        "wall_ns": 611318963,
+        "gpu_overlap_ns": 317069468,
+        "gpu_uncovered_ns": 294249495,
+        "wall_percent_of_window": 8.704739912513544,
+        "gpu_uncovered_percent_of_window": 4.189900000473982,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 3.686257307763619,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.41015754041499003,
+          "launch": 0.3984767768901833,
+          "other": 0.06714247602068092
+        }
+      },
+      "finish_update": {
+        "ranges": 65536,
+        "wall_ns": 184067675,
+        "gpu_overlap_ns": 153045800,
+        "gpu_uncovered_ns": 31021875,
+        "wall_percent_of_window": 2.6209905698215215,
+        "gpu_uncovered_percent_of_window": 0.4417290642323918,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.4417290642323918,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "forward_launch": {
+        "ranges": 527,
+        "wall_ns": 2929038406,
+        "gpu_overlap_ns": 2407329791,
+        "gpu_uncovered_ns": 521708615,
+        "wall_percent_of_window": 41.70738855027675,
+        "gpu_uncovered_percent_of_window": 7.428753365356773,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 5.255983688442544,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.024175230520972417,
+          "memcpy": 6.928610160024685,
+          "launch": 7.634759575258874,
+          "other": 0.41475964619040756
+        }
+      },
+      "ingest": {
+        "ranges": 6441,
+        "wall_ns": 108328731,
+        "gpu_overlap_ns": 59391151,
+        "gpu_uncovered_ns": 48937580,
+        "wall_percent_of_window": 1.5425227834910846,
+        "gpu_uncovered_percent_of_window": 0.6968357463627782,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.6968357463627782,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "normalize_tokens": {
+        "ranges": 303,
+        "wall_ns": 9189329,
+        "gpu_overlap_ns": 5984432,
+        "gpu_uncovered_ns": 3204897,
+        "wall_percent_of_window": 0.13084939901580997,
+        "gpu_uncovered_percent_of_window": 0.04563541542125354,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.04563541542125354,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_pack": {
+        "ranges": 527,
+        "wall_ns": 8239563,
+        "gpu_overlap_ns": 6136790,
+        "gpu_uncovered_ns": 2102773,
+        "wall_percent_of_window": 0.11732541806946996,
+        "gpu_uncovered_percent_of_window": 0.029941966743890856,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.029941966743890856,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_send": {
+        "ranges": 517,
+        "wall_ns": 142878000,
+        "gpu_overlap_ns": 109627178,
+        "gpu_uncovered_ns": 33250822,
+        "wall_percent_of_window": 2.0344793871871274,
+        "gpu_uncovered_percent_of_window": 0.4734676574842051,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.4734676574842051,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "output_stream": {
+        "ranges": 527,
+        "wall_ns": 382401090,
+        "gpu_overlap_ns": 291838826,
+        "gpu_uncovered_ns": 90562264,
+        "wall_percent_of_window": 5.445114959916079,
+        "gpu_uncovered_percent_of_window": 1.28954114254818,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 1.28954114254818,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "prefill_admission": {
+        "ranges": 6441,
+        "wall_ns": 484217941,
+        "gpu_overlap_ns": 244686929,
+        "gpu_uncovered_ns": 239531012,
+        "wall_percent_of_window": 6.894913281755712,
+        "gpu_uncovered_percent_of_window": 3.4107483762795705,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 3.0801538485564066,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.538965468558716,
+          "launch": 0.03245554083747993,
+          "other": 0.13289867301156727
+        }
+      },
+      "prepare_decode": {
+        "ranges": 303,
+        "wall_ns": 55656299,
+        "gpu_overlap_ns": 49557547,
+        "gpu_uncovered_ns": 6098752,
+        "wall_percent_of_window": 0.7925054457832804,
+        "gpu_uncovered_percent_of_window": 0.0868418177155774,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.06859258972826186,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.06320302346858349,
+          "launch": 0.09831349170020687,
+          "other": 0.03144130563128608
+        }
+      },
+      "prepare_extend": {
+        "ranges": 224,
+        "wall_ns": 128711472,
+        "gpu_overlap_ns": 54167593,
+        "gpu_uncovered_ns": 74543879,
+        "wall_percent_of_window": 1.8327582740415818,
+        "gpu_uncovered_percent_of_window": 1.0614509250302453,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.9224696459190397,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.11975395520215336,
+          "launch": 0.03245554083747993,
+          "other": 0.09240897623520482
+        }
+      },
+      "result": {
+        "ranges": 527,
+        "wall_ns": 2856693779,
+        "gpu_overlap_ns": 2263389573,
+        "gpu_uncovered_ns": 593304206,
+        "wall_percent_of_window": 40.67725338317445,
+        "gpu_uncovered_percent_of_window": 8.448222801539952,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 7.62985726281119,
+        "cuda_api_percent_of_window": {
+          "synchronise": 9.30765481319016,
+          "memcpy": 0.9787435667622112,
+          "launch": 1.2537134989024616,
+          "other": 0.2619521432440168
+        }
+      },
+      "result_decode": {
+        "ranges": 303,
+        "wall_ns": 1901829427,
+        "gpu_overlap_ns": 1452687302,
+        "gpu_uncovered_ns": 449142125,
+        "wall_percent_of_window": 27.080675591605466,
+        "gpu_uncovered_percent_of_window": 6.395459029591149,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 5.837617107142416,
+        "cuda_api_percent_of_window": {
+          "synchronise": 7.908310976407432,
+          "memcpy": 0.41015754041499003,
+          "launch": 0.3984767768901833,
+          "other": 0.06714247602068092
+        }
+      },
+      "result_prefill": {
+        "ranges": 224,
+        "wall_ns": 910809589,
+        "gpu_overlap_ns": 774387293,
+        "gpu_uncovered_ns": 136422296,
+        "wall_percent_of_window": 12.96926982791528,
+        "gpu_uncovered_percent_of_window": 1.9425548311478387,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 1.6820312148678107,
+        "cuda_api_percent_of_window": {
+          "synchronise": 1.3993438367827273,
+          "memcpy": 0.5685860263472212,
+          "launch": 0.8552367220122783,
+          "other": 0.19480966722333587
+        }
+      },
+      "sample_launch": {
+        "ranges": 6441,
+        "wall_ns": 13466506,
+        "gpu_overlap_ns": 1049840,
+        "gpu_uncovered_ns": 12416666,
+        "wall_percent_of_window": 0.19175330613832622,
+        "gpu_uncovered_percent_of_window": 0.17680434380791474,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.17680434380791474,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0,
+          "launch": 0.0,
+          "other": 0.0
+        }
+      },
+      "schedule": {
+        "ranges": 6441,
+        "wall_ns": 653868816,
+        "gpu_overlap_ns": 343894710,
+        "gpu_uncovered_ns": 309974106,
+        "wall_percent_of_window": 9.310619046154429,
+        "gpu_uncovered_percent_of_window": 4.4138070886963545,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 3.985128734568102,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.6073826019185452,
+          "launch": 0.26289948232791743,
+          "other": 0.18740384785074352
+        }
+      },
+      "update_running": {
+        "ranges": 310,
+        "wall_ns": 90918668,
+        "gpu_overlap_ns": 73662979,
+        "gpu_uncovered_ns": 17255689,
+        "wall_percent_of_window": 1.294616077748218,
+        "gpu_uncovered_percent_of_window": 0.24570853162986364,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 0.21267184318932886,
+        "cuda_api_percent_of_window": {
+          "synchronise": 0.0,
+          "memcpy": 0.0677032187401159,
+          "launch": 0.11472169511461265,
+          "other": 0.03632221644597575
+        }
+      },
+      "non_launch_bookkeeping": {
+        "ranges": 13409,
+        "wall_ns": 3618891326,
+        "gpu_overlap_ns": 2666675434,
+        "gpu_uncovered_ns": 952215892,
+        "wall_percent_of_window": 51.53039521281997,
+        "gpu_uncovered_percent_of_window": 13.558865636599084,
+        "gpu_uncovered_outside_cuda_api_percent_of_window": 12.31182174374207,
+        "cuda_api_percent_of_window": {
+          "synchronise": 9.30765481319016,
+          "memcpy": 1.5861261686807564,
+          "launch": 1.516612981230379,
+          "other": 0.44935599109476027
+        }
+      }
+    }
+  }
+}
