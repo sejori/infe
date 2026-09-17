@@ -1,0 +1,15 @@
+{
+  "cpu_models": [
+    "AMD Ryzen Threadripper PRO 7975WX 32-Cores"
+  ],
+  "logical_cpus": 64,
+  "client_affinity_cpus": 64,
+  "nsight_systems_version": "2026.4.1.191-264138605071v0",
+  "base_repository_commit": "8c6432e",
+  "note": "Additional environment and analysis metadata recorded after the run; the original manifest is unchanged.",
+  "analysis_source_sha256": {
+    "scheduler_trace.py": "b1f2dd6a6c81e5dd4e0830d9f7e909045e6cf233879809021976c1ac8324ca66",
+    "summarize_scheduler.py": "19048ba0dd173d95e5ca9ba68780c86375763dd2812a2177a329244a948069ad",
+    "e2e_tool_stream.py": "fe0ad2f26263414fdebf048af09041082fe4c8c72ea3401e1ee696ddf256debf"
+  }
+}

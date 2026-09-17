@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infe-sched-probe"
+version = "0.1.0"
+description = "Window-scoped CPU timers and NVTX annotations for SGLang"
+requires-python = ">=3.10"
+
+[project.entry-points."sglang.srt.plugins"]
+infe_sched_probe = "infe_sched_probe:register"
+
+[tool.setuptools]
+py-modules = ["infe_sched_probe"]

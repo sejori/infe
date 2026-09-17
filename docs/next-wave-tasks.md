@@ -25,34 +25,45 @@ used six counterbalanced pairs on an RTX 4090: median paired E2E effects −0.33
 reproduced under this warmed protocol. No CPU-saving or blocking mechanism was
 established. Recommend closing upstream #38536 as unconfirmed, retaining the data.
 
-## What next — read this before picking up `infe-sched`
+## `infe-sched`: M0 complete; general scheduler replacement not justified
 
-The current evidence does not demonstrate an end-to-end win for either component:
+The [final investigation](infe-sched-m0-findings.md) ran six independent
+stock/probe pairs and two CUDA/NVTX traces across short, mixed-length and
+long-prefix churn workloads. Scheduling exposed at most 4.08% of a measured
+trace window; individual admission/preparation/cache ranges were smaller.
+Do not implement the proposed Rust admission/batch-preparation component on
+this evidence. The old `feat/infe-sched-m0-probe` branch is superseded.
 
-| component | outcome | why |
-|---|---|---|
-| `infe-parsers` | parity, no win (round 5) | parsing is on the SSE path, not between GPU batches |
-| `infe-kv` | not built; Round 6 regression is unconfirmed | radix-cache CPU is ~2 % of a decode step |
+This is not a blanket negative result for CPU-side optimisation. At concurrency
+256, result processing exposed about 12% and forward/launch work about 24% of
+the traced window. Tracing perturbed that workload, so these are diagnostic
+opportunities, not promised speedups. Default decode graph coverage stopped at
+batch size 24; the separate graph-coverage control is recorded in the findings.
+Increasing coverage to 256 improved throughput by 11.4% / 13.0% in two balanced
+pairs, while TTFT p99 worsened by 18.0% / 12.6%. This is a measured configuration
+lever, with a tradeoff, rather than a measured Rust benefit.
 
-The prior from BRIEF §4's numbers is that decode dominates, and the CPU-side work around it is
-single-digit percent of the step. `infe-sched` (BRIEF §6.3) sits in the same place. **The prior is that it will
-also be flat.** So before any implementation:
+The next performance work, if resumed, should validate graph coverage and its
+tail-latency tradeoff on the target workload, then re-profile and isolate
+result/output processing under the tuned configuration. It needs
+a concrete removable cost and a bounded interface before choosing Rust. Do not
+restart a broad engine or scheduler rewrite merely because CPU utilisation is
+high. Larger gains on other hardware, models or scheduling policies remain
+untested.
 
-1. **Profile first, with a written kill criterion.** The M0 pattern worked twice and cost days, not weeks.
-2. **Check whether the engines already tried it.** Both times the answer was in the engine's own repo — SGLang
-   had shipped a C++ *and* a Rust radix tree before we started. Search vLLM/SGLang PRs for a native scheduler
-   before writing one.
-3. **Consider re-aiming the thesis.** BRIEF §5.1's boundary rule assumed the win comes from moving a hot CPU
-   loop off Python. Two rounds say the loops around decode are not hot enough for that on a small dense model.
-   Testing it properly likely needs either (a) a regime where CPU genuinely binds — very large batch, many tiny
-   requests, CPU-bound preprocessing, or disaggregated prefill where the scheduler runs hot — or (b) a target
-   other than per-step CPU: correctness, portability or memory, which `infe-parsers` did actually deliver.
+| Component | Status |
+|---|---|
+| `infe-parsers` | Functional/parity work complete; no demonstrated serving speedup |
+| `infe-kv` | Not built; original TreeCore regression unconfirmed after independent sessions |
+| `infe-sched` | M0 complete; no general replacement justified; execution/output opportunity retained |
+
+The small engineering items below do not block this performance verdict.
 
 ## Carried-over items (small, not blocking)
 
 | # | Where | What |
 |---|---|---|
-| B7 | `crates/infe-parsers/src/types.rs` | Ids are index-derived, so every request's first call shares an id. Unique within a message (what the API requires) but collides across a conversation. Use a random, seedable generator. |
+| B7 | `crates/infe-parsers/src/types.rs` | Done: thread-local xorshift IDs are already implemented and tested. |
 | D4b | CPU measurement | TreeCore reproduction now uses cgroup counter deltas inside each measured round. Legacy whole-run samples must not be used for per-level CPU or independent-sample tests; a shorter sampling interval alone does not fix the experimental unit. |
 | D7 | `bench/harness/run_ab_docker.sh` | The sampler exits only when the container disappears, so the driver kills it before `wait`. A `--stop-file`/`--duration` would be cleaner. |
 | C | conformance | 14 Rust fixtures, all synthetic. Both round-4 blockers were *shim* bugs that no Rust fixture can catch; the off-GPU probes (`bench/harness/parity_probe_*.py`, `probe_feed_trace.py`) caught both in ~1 min each. Promote them to a CI job that runs inside the pinned engine images — that is the highest-value testing work outstanding. |
@@ -93,7 +104,7 @@ All items B1-B8 are **done** as of round 5. Kept for reference.
 | B4 | `parser.rs` | `finish()` closes an open tool call the way stock does. | done |
 | B5 | reasoning | `deepseek_reasoning` through engines' reasoning interfaces. | pending (not blocking) |
 | B6 | `hermes.rs` | Marker-less continuation calls (bare `{` after completed call). | done |
-| B7 | `types.rs::make_tool_call_id` | Random ids, not index-derived. | pending (small) |
+| B7 | `types.rs::make_tool_call_id` | Random ids, not index-derived. | done |
 | B8 | SGLang shim | Nameless argument fragments forwarded, not dropped. | done |
 
 ## C. Conformance that would have caught B
