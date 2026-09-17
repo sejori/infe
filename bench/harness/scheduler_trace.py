@@ -80,7 +80,10 @@ def analyse(evidence):
     return result
 
 
-def extract(path):
+def extract(path, extra_phases=()):
+    allowed_phases = PHASES | set(extra_phases)
+    if any(not re.fullmatch(r"[a-z][a-z_]*", name) for name in allowed_phases):
+        raise ValueError("Invalid phase whitelist")
     con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "CUPTI_ACTIVITY_KIND_KERNEL" not in tables or "NVTX_EVENTS" not in tables:
@@ -98,12 +101,12 @@ def extract(path):
                if name and re.fullmatch(r"infe\.window\.(short|mixed|cache_churn)(?:_c[1-9][0-9]*)?", name)]
     if not windows or len({case for _, _, case in windows}) != len(windows):
         raise ValueError("Missing or duplicate measurement windows")
-    phases = {name: [] for name in sorted(PHASES)}
+    phases = {name: [] for name in sorted(allowed_phases)}
     scheduler_threads = set()
     for start, end, label, tid in ranges:
         if label and label.startswith("infe.phase."):
             name = label.removeprefix("infe.phase.")
-            if name not in PHASES:
+            if name not in allowed_phases:
                 raise ValueError("Unexpected phase label")
             phases[name].append([start, end])
             scheduler_threads.add(tid)

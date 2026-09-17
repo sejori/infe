@@ -1,0 +1,14 @@
+{
+  "abi_version": 1,
+  "synthetic": true,
+  "engine_oracle": true,
+  "events_sha256": "57ed71df714d9907342b1ce5b62ac7b0dcc155b78995c2d4fe3c4f28f1caf281",
+  "counts": {
+    "admissions": 640,
+    "steps": 1280,
+    "completion_records": 640,
+    "ignored_rows": 8948,
+    "tokens_emitted": 3820,
+    "engine_state_checks": 10240
+  }
+}

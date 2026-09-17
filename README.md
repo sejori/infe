@@ -30,7 +30,9 @@ The live parser and TreeCore experiments have not demonstrated an end-to-end
 Rust speedup. The [completed scheduler investigation](docs/infe-sched-m0-findings.md)
 does not justify a general Rust scheduler replacement, but identifies
 high-concurrency execution/output work and CUDA graph coverage as more promising
-targets. See the [task handover](docs/next-wave-tasks.md) for the remaining scope.
+targets. The [batch-result follow-up](docs/batch-result-findings.md) implements a
+Python ownership/replay control, but the tuned profile falls below the gate for a
+Rust port of that boundary. See the [task handover](docs/next-wave-tasks.md) for the remaining scope.
 
 Alpha. All dialects pass conformance tests (37 unit tests + 6 fixtures).
 PyO3 wheels build on Linux x86_64. Live A/B benchmarks run on RTX 4090
