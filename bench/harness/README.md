@@ -1,5 +1,80 @@
 # A/B benchmark harness
 
+## TreeCore independent-session reproduction
+
+For SGLang issue [#38536](https://github.com/sgl-project/sglang/issues/38536), use
+`treecore_sessions.py`. The old `run_ab_docker.sh` runs one session per arm;
+its rounds and CPU samples are not independent backend replicates.
+
+```bash
+python3 bench/harness/treecore_sessions.py \
+  --gpu 1 --hf-cache "$HOME/infe-bench/hf" \
+  --revision 989aa7980e4cf806f80c7fef2b1adb7bc71aa306 \
+  --output bench/results/treecore-sessions
+```
+
+Requires Linux, Python stdlib, Docker, NVIDIA container support, readable host
+cgroup-v2 CPU counters, and the image/model already cached. Pick an available
+GPU and port. The harness checks for compute processes before each session,
+uses unique container names, and removes only its own containers. Its advisory
+GPU lock coordinates other copies of this harness, not arbitrary GPU jobs.
+
+The default protocol is fixed before collecting data:
+
+- Six pairs / twelve fresh server sessions on one GPU. Three pairs run Python
+  first, three Rust first, shuffled using the recorded seed. Within-session
+  rounds are not independent replicates. Both arms use the same resolved image
+  ID (default tag v0.5.19), model revision, server seed, and stock `qwen` parser.
+- Concurrency 8, 64, 256, in that order in every session. Two discarded warmup
+  rounds at each level, then three measured rounds. This tests a warmed cache;
+  it deliberately differs from Round 6's four-request initial warmup. Raw warmup
+  requests are retained. No optional early stopping based on the effect size.
+- Whole-container CPU is the cgroup CPU-time difference over each measured
+  round. The level CPU percentage is total CPU time / total measured wall time,
+  expressed as percent of one core. No startup/warmup samples or main-PID fallback.
+- GPU temperature, clocks, power, utilisation and host load are sampled during
+  each measured level. Telemetry samples are diagnostic, not independent units.
+  Measurement windows are short, so telemetry may be sparse. Other host users
+  can still introduce CPU contention; this is not a dedicated-machine test.
+- Each session contributes one median-of-rounds value per latency metric/load.
+  The comparison preserves every pair's Rust/Python percentage change and shows
+  its median and range. It does not pool requests into a significance test or
+  claim that a nonsignificant/small result establishes equivalence.
+- HTTP failures or missing/malformed tool calls abort the experiment and retain
+  partial data and server logs. Successful parity checks cover two expected tool
+  names, valid argument objects, and IDs; they do not validate semantic answers.
+
+`stream_span_p50` is the median time from the first to last meaningful SSE chunk
+(sum of inter-chunk intervals), not time divided by chunk count. ITL measures SSE
+chunks, not necessarily model tokens. Delta counts remain visible for comparison.
+
+Artifacts: `manifest.json` (schedule/config/image/hardware/harness hashes), one
+JSON and server log per session, and `comparison.json` (paired session results).
+Published metadata omits hostnames, SSH identities, local cache/output paths,
+GPU UUIDs and Docker identifiers. The UUID is used only for the local GPU lock.
+Engine logs are scrubbed for machine identifiers before being saved. Keep
+hardware specifications and measurements for reproducibility.
+Keep the full set together. Do not feed these files to `summarize_ab.py`, which
+handles the legacy schema. The legacy summarizer now leaves CPU unavailable
+unless the input explicitly supplies a window-scoped value.
+
+Render a complete run (also accepts archived `pair-*.json.gz` files):
+
+```bash
+python3 bench/harness/summarize_treecore.py bench/results/treecore-sessions
+```
+
+If the latency regression survives independent sessions, profile the scheduler
+and TreeCore before choosing an optimisation. If it does not, report failure to
+reproduce under this warmed protocol. A long-prefix study is a separate workload,
+not a substitute for reproducing the original short-prefix observation.
+
+Run harness checks with:
+
+```bash
+python3 -m unittest discover -s bench/harness -p 'test_treecore_sessions.py'
+```
+
 ## Purpose
 
 Measure `infe-parsers` (Rust) vs stock Python parsers in vLLM and SGLang,

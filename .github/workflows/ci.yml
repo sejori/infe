@@ -87,6 +87,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test benchmark session accounting
+        run: python3 -m unittest discover -s bench/harness -p 'test_treecore_sessions.py'
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 

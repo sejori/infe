@@ -1,0 +1,392 @@
+{
+  "8": {
+    "e2e_p50": {
+      "python_session_median": 260.5295854154974,
+      "rust_session_median": 260.77655190601945,
+      "paired_percent_changes": [
+        -1.162216124037041,
+        0.8869581892833933,
+        -0.6180783416451452,
+        3.056554050251026,
+        -0.07580339302000194,
+        -0.5791418538764637
+      ],
+      "median_percent_change": -0.3274726234482328,
+      "min_percent_change": -1.162216124037041,
+      "max_percent_change": 3.056554050251026,
+      "pairs": 6
+    },
+    "ttft_p50": {
+      "python_session_median": 74.79291083291173,
+      "rust_session_median": 74.97068028897047,
+      "paired_percent_changes": [
+        -4.234618199931517,
+        3.2112318608648716,
+        -2.081556236790494,
+        13.835691103211678,
+        -0.512034766392977,
+        -0.19471001841725455
+      ],
+      "median_percent_change": -0.35337239240511575,
+      "min_percent_change": -4.234618199931517,
+      "max_percent_change": 13.835691103211678,
+      "pairs": 6
+    },
+    "itl_p50": {
+      "python_session_median": 5.111141363158822,
+      "rust_session_median": 5.089241778478026,
+      "paired_percent_changes": [
+        -0.3389359161450778,
+        0.14800140763255865,
+        -1.4298249726798273,
+        -0.5953919025620813,
+        -1.1972274163191021,
+        -0.7818959287577365
+      ],
+      "median_percent_change": -0.6886439156599089,
+      "min_percent_change": -1.4298249726798273,
+      "max_percent_change": 0.14800140763255865,
+      "pairs": 6
+    },
+    "itl_p99": {
+      "python_session_median": 44.060894888825715,
+      "rust_session_median": 44.06502919271588,
+      "paired_percent_changes": [
+        -0.25329432539752395,
+        -0.1413098038671956,
+        0.33990894069553246,
+        0.16038075431346055,
+        0.46844434875839003,
+        -0.0016452529112309655
+      ],
+      "median_percent_change": 0.07936775070111479,
+      "min_percent_change": -0.25329432539752395,
+      "max_percent_change": 0.46844434875839003,
+      "pairs": 6
+    },
+    "stream_span_p50": {
+      "python_session_median": 180.03514502197504,
+      "rust_session_median": 180.10432505980134,
+      "paired_percent_changes": [
+        0.35316846638822064,
+        -0.22903889608180128,
+        0.05636139838889331,
+        0.05426347365558026,
+        0.14950510408473505,
+        -0.3076890681695921
+      ],
+      "median_percent_change": 0.05531243602223679,
+      "min_percent_change": -0.3076890681695921,
+      "max_percent_change": 0.35316846638822064,
+      "pairs": 6
+    },
+    "deltas_per_request": {
+      "python_session_median": 10.25,
+      "rust_session_median": 10.25,
+      "paired_percent_changes": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_percent_change": 0.0,
+      "min_percent_change": 0.0,
+      "max_percent_change": 0.0,
+      "pairs": 6
+    },
+    "requests_per_s": {
+      "python_session_median": 30.557511871285758,
+      "rust_session_median": 30.493068651075163,
+      "paired_percent_changes": [
+        1.0767624497589834,
+        -0.7720999573270104,
+        0.7042708978671097,
+        -2.935601817303457,
+        -0.0029953787774150697,
+        0.3098478525072723
+      ],
+      "median_percent_change": 0.15342623686492862,
+      "min_percent_change": -2.935601817303457,
+      "max_percent_change": 1.0767624497589834,
+      "pairs": 6
+    },
+    "cpu_percent": {
+      "python_session_median": 207.28017187318898,
+      "rust_session_median": 204.46195524138318,
+      "paired_percent_changes": [
+        -39.32970274617642,
+        72.52760137127923,
+        -0.8192737260149241,
+        -1.1735134812041137,
+        -9.44477935144501,
+        -1.827605471328364
+      ],
+      "median_percent_change": -1.5005594762662389,
+      "min_percent_change": -39.32970274617642,
+      "max_percent_change": 72.52760137127923,
+      "pairs": 6
+    }
+  },
+  "64": {
+    "e2e_p50": {
+      "python_session_median": 630.5332842748612,
+      "rust_session_median": 623.6459182109684,
+      "paired_percent_changes": [
+        0.9925282232385868,
+        -5.339422507481251,
+        6.068379405755442,
+        -0.10877052279741894,
+        -1.945014221645458,
+        -5.37757813660148
+      ],
+      "median_percent_change": -1.0268923722214385,
+      "min_percent_change": -5.37757813660148,
+      "max_percent_change": 6.068379405755442,
+      "pairs": 6
+    },
+    "ttft_p50": {
+      "python_session_median": 230.83802009932697,
+      "rust_session_median": 228.2632573042065,
+      "paired_percent_changes": [
+        3.2229961093995785,
+        -2.5799221460975352,
+        0.6363445133299228,
+        2.562759919156399,
+        1.8271584785929385,
+        -4.528586882247632
+      ],
+      "median_percent_change": 1.2317514959614306,
+      "min_percent_change": -4.528586882247632,
+      "max_percent_change": 3.2229961093995785,
+      "pairs": 6
+    },
+    "itl_p50": {
+      "python_session_median": 11.580506106838584,
+      "rust_session_median": 11.306067695841193,
+      "paired_percent_changes": [
+        1.728565293022477,
+        -3.47126605955137,
+        8.424790472045274,
+        -0.669576534890115,
+        -5.444541625162969,
+        -7.996055228978394
+      ],
+      "median_percent_change": -2.0704212972207428,
+      "min_percent_change": -7.996055228978394,
+      "max_percent_change": 8.424790472045274,
+      "pairs": 6
+    },
+    "itl_p99": {
+      "python_session_median": 92.49349581077695,
+      "rust_session_median": 91.7939077783376,
+      "paired_percent_changes": [
+        3.7442005789827038,
+        -6.84137639984127,
+        15.403481008156872,
+        -4.710199387053304,
+        -3.71564118598392,
+        0.03159539447528115
+      ],
+      "median_percent_change": -1.8420228957543194,
+      "min_percent_change": -6.84137639984127,
+      "max_percent_change": 15.403481008156872,
+      "pairs": 6
+    },
+    "stream_span_p50": {
+      "python_session_median": 385.26793848723173,
+      "rust_session_median": 375.91769569553435,
+      "paired_percent_changes": [
+        -0.5114002305460885,
+        -7.070765972647508,
+        11.475671376081497,
+        -2.5106876986625726,
+        -3.2828221249019074,
+        -6.2406099231583685
+      ],
+      "median_percent_change": -2.89675491178224,
+      "min_percent_change": -7.070765972647508,
+      "max_percent_change": 11.475671376081497,
+      "pairs": 6
+    },
+    "deltas_per_request": {
+      "python_session_median": 10.375,
+      "rust_session_median": 10.375,
+      "paired_percent_changes": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_percent_change": 0.0,
+      "min_percent_change": 0.0,
+      "max_percent_change": 0.0,
+      "pairs": 6
+    },
+    "requests_per_s": {
+      "python_session_median": 99.49764641923878,
+      "rust_session_median": 100.55612936112826,
+      "paired_percent_changes": [
+        -0.970743251681272,
+        5.5438258202124,
+        -5.565383232194721,
+        0.012424312627268286,
+        1.8879021635839432,
+        5.185338402249551
+      ],
+      "median_percent_change": 0.9501632381056058,
+      "min_percent_change": -5.565383232194721,
+      "max_percent_change": 5.5438258202124,
+      "pairs": 6
+    },
+    "cpu_percent": {
+      "python_session_median": 151.00854376701216,
+      "rust_session_median": 151.225847224468,
+      "paired_percent_changes": [
+        -0.7167492409799525,
+        -0.6106270216670096,
+        -0.0006614757349976408,
+        0.4224303898367143,
+        2.0911246065882683,
+        0.30700896756776785
+      ],
+      "median_percent_change": 0.1531737459163851,
+      "min_percent_change": -0.7167492409799525,
+      "max_percent_change": 2.0911246065882683,
+      "pairs": 6
+    }
+  },
+  "256": {
+    "e2e_p50": {
+      "python_session_median": 1153.7493935320526,
+      "rust_session_median": 1168.8816086389124,
+      "paired_percent_changes": [
+        3.5700673071398903,
+        -2.4016452065574234,
+        1.1846207295944655,
+        -2.3936061867428027,
+        6.50753475153274,
+        5.50438864822671
+      ],
+      "median_percent_change": 2.377344018367178,
+      "min_percent_change": -2.4016452065574234,
+      "max_percent_change": 6.50753475153274,
+      "pairs": 6
+    },
+    "ttft_p50": {
+      "python_session_median": 636.5633353125304,
+      "rust_session_median": 643.2610996998847,
+      "paired_percent_changes": [
+        1.4301670692002277,
+        2.047518385529168,
+        0.050711587235685585,
+        -2.6793513518130085,
+        5.195970806924688,
+        3.5300797584464583
+      ],
+      "median_percent_change": 1.7388427273646978,
+      "min_percent_change": -2.6793513518130085,
+      "max_percent_change": 5.195970806924688,
+      "pairs": 6
+    },
+    "itl_p50": {
+      "python_session_median": 24.432199308648705,
+      "rust_session_median": 23.643902502954006,
+      "paired_percent_changes": [
+        0.06053157349266147,
+        -12.763620400366026,
+        7.844200907103471,
+        -5.148369749666037,
+        -5.40387926730157,
+        6.00794198114063
+      ],
+      "median_percent_change": -2.543919088086688,
+      "min_percent_change": -12.763620400366026,
+      "max_percent_change": 7.844200907103471,
+      "pairs": 6
+    },
+    "itl_p99": {
+      "python_session_median": 123.11150388792157,
+      "rust_session_median": 122.50841090455651,
+      "paired_percent_changes": [
+        -1.8679650669343184,
+        -7.930045697859301,
+        14.862420370237018,
+        -12.937925416705642,
+        -1.3493009850576887,
+        6.345140174730979
+      ],
+      "median_percent_change": -1.6086330259960036,
+      "min_percent_change": -12.937925416705642,
+      "max_percent_change": 14.862420370237018,
+      "pairs": 6
+    },
+    "stream_span_p50": {
+      "python_session_median": 503.89884738251567,
+      "rust_session_median": 520.6901249475777,
+      "paired_percent_changes": [
+        5.760497564965417,
+        -3.9573883970160484,
+        1.71873781312879,
+        -2.064631020461072,
+        9.58213377013999,
+        2.3876777624678214
+      ],
+      "median_percent_change": 2.0532077877983057,
+      "min_percent_change": -3.9573883970160484,
+      "max_percent_change": 9.58213377013999,
+      "pairs": 6
+    },
+    "deltas_per_request": {
+      "python_session_median": 10.3984375,
+      "rust_session_median": 10.3984375,
+      "paired_percent_changes": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_percent_change": 0.0,
+      "min_percent_change": 0.0,
+      "max_percent_change": 0.0,
+      "pairs": 6
+    },
+    "requests_per_s": {
+      "python_session_median": 211.3641124929224,
+      "rust_session_median": 207.51768255690942,
+      "paired_percent_changes": [
+        -3.0815134348178286,
+        2.421780043177324,
+        -2.539004232513542,
+        3.703799636017613,
+        -5.989867695320794,
+        -5.131376587133896
+      ],
+      "median_percent_change": -2.810258833665685,
+      "min_percent_change": -5.989867695320794,
+      "max_percent_change": 3.703799636017613,
+      "pairs": 6
+    },
+    "cpu_percent": {
+      "python_session_median": 205.3563355275133,
+      "rust_session_median": 205.79726815028192,
+      "paired_percent_changes": [
+        -0.6689095485621133,
+        0.6937079275714852,
+        1.1603359413661973,
+        0.3966642543622445,
+        0.9382080298143247,
+        -0.45162925705209966
+      ],
+      "median_percent_change": 0.5451860909668649,
+      "min_percent_change": -0.6689095485621133,
+      "max_percent_change": 1.1603359413661973,
+      "pairs": 6
+    }
+  }
+}
