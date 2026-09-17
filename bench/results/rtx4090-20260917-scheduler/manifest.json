@@ -1,0 +1,92 @@
+{
+  "image_id": "sha256:e6238090791a938ab86dd21a9a6394192dad15237e815df557cf83524d54b813",
+  "image_digests": [
+    "lmsysorg/sglang@sha256:d6e7288627be8b02be88e4bba38e73f6d50e2826869f753c13a4c4385ab3eda9"
+  ],
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "gpu": {
+    "time": 1789658458.943177,
+    "name": "NVIDIA GeForce RTX 4090",
+    "driver_version": "590.48.01",
+    "temperature.gpu": "33",
+    "clocks.sm": "2610",
+    "clocks.mem": "810",
+    "power.draw": "35.92",
+    "utilization.gpu": "0",
+    "memory.used": "1"
+  },
+  "concurrency_override": null,
+  "cases": [
+    [
+      "short",
+      8
+    ],
+    [
+      "short",
+      256
+    ],
+    [
+      "mixed",
+      64
+    ],
+    [
+      "cache_churn",
+      64
+    ]
+  ],
+  "workloads": {
+    "short": {
+      "warmup": 256,
+      "requests": 4096
+    },
+    "mixed": {
+      "warmup": 64,
+      "requests": 512
+    },
+    "cache_churn": {
+      "warmup": 128,
+      "requests": 128
+    }
+  },
+  "selected_workloads": [
+    "short",
+    "mixed",
+    "cache_churn"
+  ],
+  "pilot_count": 0,
+  "orders": [
+    [
+      "probe",
+      "stock"
+    ],
+    [
+      "stock",
+      "probe"
+    ],
+    [
+      "probe",
+      "stock"
+    ],
+    [
+      "stock",
+      "probe"
+    ],
+    [
+      "probe",
+      "stock"
+    ],
+    [
+      "stock",
+      "probe"
+    ]
+  ],
+  "trace_sessions": 2,
+  "seed": 20260917,
+  "source_sha256": {
+    "scheduler_investigation.py": "38d7c889c077846d34ec1dafffb863a5daa7c818c1ed54e449e64db91a1a95cf",
+    "treecore_sessions.py": "2ea1ebce0cf03e61e9dff3cc302dd29652cce0515a948edcf6e77e5ed248e003",
+    "infe_sched_probe.py": "7a969916c7d2eab007c8547c0e19120842b1f0bc71c7771ab11795883c7bea73",
+    "pyproject.toml": "6c336ce382450abf243d3068420164e98116483b87bd3b6c2b4d6bdf376a9e40"
+  }
+}

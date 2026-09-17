@@ -1,0 +1,45 @@
+{
+  "purpose": "Exploratory graph-coverage control; two balanced pairs, selected after inspecting traces",
+  "image_id": "sha256:e6238090791a938ab86dd21a9a6394192dad15237e815df557cf83524d54b813",
+  "image_digests": [
+    "lmsysorg/sglang@sha256:d6e7288627be8b02be88e4bba38e73f6d50e2826869f753c13a4c4385ab3eda9"
+  ],
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "gpu": {
+    "time": 1789660807.846244,
+    "name": "NVIDIA GeForce RTX 4090",
+    "driver_version": "590.48.01",
+    "temperature.gpu": "34",
+    "clocks.sm": "2610",
+    "clocks.mem": "810",
+    "power.draw": "36.18",
+    "utilization.gpu": "0",
+    "memory.used": "1"
+  },
+  "case": "short_c256",
+  "warmup_requests": 256,
+  "measured_requests": 4096,
+  "orders": [
+    [
+      "default",
+      "decode_graph_256"
+    ],
+    [
+      "decode_graph_256",
+      "default"
+    ]
+  ],
+  "configurations": {
+    "default": [],
+    "decode_graph_256": [
+      "--cuda-graph-max-bs-decode",
+      "256"
+    ]
+  },
+  "source_sha256": {
+    "scheduler_graph_check.py": "1fe618065d5f9f8e00bca0b8969c51676a3b1ce89dd945f09259e8b495d71907",
+    "scheduler_investigation.py": "38d7c889c077846d34ec1dafffb863a5daa7c818c1ed54e449e64db91a1a95cf",
+    "treecore_sessions.py": "2ea1ebce0cf03e61e9dff3cc302dd29652cce0515a948edcf6e77e5ed248e003"
+  }
+}

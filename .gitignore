@@ -1,3 +1,6 @@
 /target
 python/infe-parsers/python/infe_parsers/_infe_parsers*.so
 **/__pycache__/
+# Raw profiler reports retain machine identity; publish derived intervals only.
+*.nsys-rep
+trace.sqlite*

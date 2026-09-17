@@ -1,6 +1,6 @@
 # infe
 
-Rust crates for faster LLM inference. Drop-in tool-call and reasoning-content
+Rust components and benchmarks for LLM inference. Drop-in tool-call and reasoning-content
 streaming parsers for vLLM and SGLang, via PyO3 shims -- no engine fork
 required.
 
@@ -25,6 +25,12 @@ called once per engine step with a batch of decoded text.
 - DeepSeek reasoning -- DeepSeek-R1, Qwen-QwQ
 
 ## Status
+
+The live parser and TreeCore experiments have not demonstrated an end-to-end
+Rust speedup. The [completed scheduler investigation](docs/infe-sched-m0-findings.md)
+does not justify a general Rust scheduler replacement, but identifies
+high-concurrency execution/output work and CUDA graph coverage as more promising
+targets. See the [task handover](docs/next-wave-tasks.md) for the remaining scope.
 
 Alpha. All dialects pass conformance tests (37 unit tests + 6 fixtures).
 PyO3 wheels build on Linux x86_64. Live A/B benchmarks run on RTX 4090

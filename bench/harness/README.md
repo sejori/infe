@@ -1,5 +1,66 @@
 # A/B benchmark harness
 
+## Scheduler investigation
+
+`scheduler_investigation.py` measures scheduling and batch preparation in the
+pinned SGLang v0.5.19 image. Read the [protocol](../../docs/infe-sched-m0-plan.md)
+before running. It compares stock with an instrumentation-only plugin, then
+collects two separate CUDA/NVTX traces. It does not implement or benchmark a Rust
+scheduler.
+
+```bash
+python3 bench/harness/scheduler_investigation.py \
+  --gpu 1 --hf-cache "$HOME/infe-bench/hf" \
+  --plugin "$PWD/shims/sglang/infe_sched_probe" \
+  --pairs 6 --trace-sessions 2 \
+  --output "$HOME/infe-bench/scheduler-private"
+```
+
+Use an idle GPU and free ports (defaults 18096/19097). The requirements and GPU
+lock limitations of the TreeCore runner below also apply. Nsight Systems must
+be available in the image; export reports using that same version. The plugin
+is installed through SGLang's entry-point mechanism. Hook readiness and actual
+timing records are checked. All timings exclude warmup; fixed token counts are
+validated on every response. The two short cases use concurrency 8/256; mixed
+lengths and long-prefix churn use concurrency 64.
+
+For each trace directory, export privately and derive publishable intervals:
+
+```bash
+TRACE_DIR="$HOME/infe-bench/scheduler-private/pair-00-0-trace"
+docker run --rm -v "$TRACE_DIR:/artifacts" --entrypoint nsys \
+  lmsysorg/sglang:v0.5.19 export --type=sqlite \
+  --output=/artifacts/trace.sqlite /artifacts/trace.nsys-rep
+python3 bench/harness/scheduler_trace.py "$TRACE_DIR/trace.sqlite" \
+  --output "$TRACE_DIR/derived"
+# Repeat for pair-01-0-trace, then:
+python3 bench/harness/summarize_scheduler.py "$HOME/infe-bench/scheduler-private"
+```
+
+The summarizer requires the complete six-pair/two-trace protocol, checks all
+request counts, recomputes metrics, verifies real evictions, and regenerates
+overlap from intervals. Paired effects quantify instrumentation distortion;
+trace effects are descriptive comparisons with the unprofiled probe median.
+They are not Rust speedups. CPU ranges without simultaneous GPU activity are
+diagnostic ceilings, not a causal estimate of achievable improvement. The
+secondary CUDA-API breakdown matches calls to the scheduler thread before
+discarding its identifier.
+
+Only publish `manifest.json`, complete `session.json` files (gzip accepted),
+scrubbed `server.log.gz`, `derived/intervals.json.gz`, `derived/overlap.json` and
+the generated summary. Raw `.nsys-rep` and SQLite exports contain identity
+metadata: keep them outside the repository. The derived interval schema retains
+only relative timestamps and fixed phase/API-category names. Run all harness
+checks with `python3 -m unittest discover -s bench/harness -p 'test_*.py'`.
+
+The [completed findings](../../docs/infe-sched-m0-findings.md) also include a
+separate exploratory control, `scheduler_graph_check.py`: two balanced pairs of
+default versus `--cuda-graph-max-bs-decode 256`, both using the stock scheduler
+without instrumentation. It reuses the fixed short-c256 workload. Keep its
+output separate from the six-pair probe calibration; the published dataset
+stores it under `graph-check/`. `summarize_scheduler.py` validates and regenerates
+that comparison too when the subdirectory is present.
+
 ## TreeCore independent-session reproduction
 
 For SGLang issue [#38536](https://github.com/sgl-project/sglang/issues/38536), use
