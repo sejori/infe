@@ -1,0 +1,65 @@
+{
+  "config": {
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "image": "lmsysorg/sglang:v0.5.19",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "pairs": 6,
+    "seed": 20260917,
+    "concurrency": [
+      8,
+      64,
+      256
+    ],
+    "rounds": 3,
+    "warmup_rounds": 2,
+    "port": 18096,
+    "startup_timeout": 600
+  },
+  "orders": [
+    [
+      "rust",
+      "python"
+    ],
+    [
+      "python",
+      "rust"
+    ],
+    [
+      "rust",
+      "python"
+    ],
+    [
+      "python",
+      "rust"
+    ],
+    [
+      "rust",
+      "python"
+    ],
+    [
+      "python",
+      "rust"
+    ]
+  ],
+  "image_id": "sha256:e6238090791a938ab86dd21a9a6394192dad15237e815df557cf83524d54b813",
+  "image_digests": [
+    "lmsysorg/sglang@sha256:d6e7288627be8b02be88e4bba38e73f6d50e2826869f753c13a4c4385ab3eda9"
+  ],
+  "gpu": {
+    "time": 1789653088.5308468,
+    "name": "NVIDIA GeForce RTX 4090",
+    "driver_version": "590.48.01",
+    "temperature.gpu": "32",
+    "clocks.sm": "2610",
+    "clocks.mem": "810",
+    "power.draw": "35.27",
+    "utilization.gpu": "0",
+    "memory.used": "1"
+  },
+  "started": 1789653088.5438488,
+  "harness_sha256": {
+    "treecore_sessions.py": "6b69b2b13aeb81ea5e95d16ecf9105dfbcb61d4bbfc7119903f2b60d91bef6f8",
+    "e2e_tool_stream.py": "fe0ad2f26263414fdebf048af09041082fe4c8c72ea3401e1ee696ddf256debf"
+  },
+  "artifact_redaction": "Machine identifiers and local paths removed after collection; measurements and executed-source hashes retained."
+}

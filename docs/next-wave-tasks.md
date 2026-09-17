@@ -1,4 +1,4 @@
-# Next-wave task list — handover (updated 2026-09-08)
+# Next-wave task list — handover (updated 2026-09-17)
 
 ## Where the project is
 
@@ -10,30 +10,31 @@ Do not spend more rounds tuning it for speed. Parsing sits on the SSE path, not 
 component's real value was proving manifest -> crate -> wheel -> shim -> conformance -> A/B end to end on two
 engines, which it did.
 
-## `infe-kv`: killed at M0, and confirmed by Round 6 (2026-09-08)
+## `infe-kv`: deprioritised; Round 6 interpretation corrected (2026-09-17)
 
-**Do not build it.** M0 answered the kill criterion from SGLang's own PRs (C++ tree closed with zero end-to-end
-win despite a 229x insert-finalisation microbenchmark; Rust replacement merged with no published end-to-end
-numbers). **Round 6 confirmed it independently on our hardware**: the shipped Rust TreeCore is *slower* than
-Python — `stream_span` +7.6 % @conc64, +9.1 % @conc256, e2e ~+11 % — while using 6 % less CPU. The
-engine-version control (0.5.18 vs 0.5.19 Python) was flat and all arms had identical deltas/req, so the
-comparison is clean. Full write-up, setup corrections and limitations: `docs/infe-kv-m0-findings.md` §"Round 6".
+**Do not build it without a measured opportunity.** Round 6 observed higher Rust
+latency, but one session per backend in fixed order cannot establish a backend
+regression. Its whole-run CPU medians cannot establish a CPU saving or blocking
+mechanism. The earlier claims of independent confirmation and 6% lower CPU are
+withdrawn. See `docs/infe-kv-m0-findings.md` for the correction and
+`bench/harness/treecore_sessions.py` for the independent-session reproduction.
 
-Two things to extract rather than discard:
-- **Worth filing upstream.** SGLang's Rust TreeCore end-to-end benchmarking is an explicitly "planned
-  follow-up"; we have a clean three-arm measurement of a 7.6-9.1 % regression with a pinned repro.
-- **The ranking lesson, now twice-confirmed** (see below).
+The [completed follow-up](../bench/results/rtx4090-20260917-treecore-sessions/README.md)
+used six counterbalanced pairs on an RTX 4090: median paired E2E effects −0.33%,
+−1.03%, +2.38% at concurrency 8/64/256. The original 11–12% slowdown was not
+reproduced under this warmed protocol. No CPU-saving or blocking mechanism was
+established. Recommend closing upstream #38536 as unconfirmed, retaining the data.
 
 ## What next — read this before picking up `infe-sched`
 
-Two components have now been measured end-to-end and **both were flat or negative**:
+The current evidence does not demonstrate an end-to-end win for either component:
 
 | component | outcome | why |
 |---|---|---|
 | `infe-parsers` | parity, no win (round 5) | parsing is on the SSE path, not between GPU batches |
-| `infe-kv` | not built; the native impl that ships is a regression (round 6) | radix-cache CPU is ~2 % of a decode step |
+| `infe-kv` | not built; Round 6 regression is unconfirmed | radix-cache CPU is ~2 % of a decode step |
 
-The common cause is visible in BRIEF §4's own numbers: decode dominates, and the CPU-side work around it is
+The prior from BRIEF §4's numbers is that decode dominates, and the CPU-side work around it is
 single-digit percent of the step. `infe-sched` (BRIEF §6.3) sits in the same place. **The prior is that it will
 also be flat.** So before any implementation:
 
@@ -52,7 +53,7 @@ also be flat.** So before any implementation:
 | # | Where | What |
 |---|---|---|
 | B7 | `crates/infe-parsers/src/types.rs` | Ids are index-derived, so every request's first call shares an id. Unique within a message (what the API requires) but collides across a conversation. Use a random, seedable generator. |
-| D4b | `bench/harness/cpu_sampler.py` | Now cgroup-wide (all container PIDs), verified at 101% on a single-threaded busy loop. Still only 5-13 samples per run; drop the interval to 0.25s or lengthen runs before quoting CPU. |
+| D4b | CPU measurement | TreeCore reproduction now uses cgroup counter deltas inside each measured round. Legacy whole-run samples must not be used for per-level CPU or independent-sample tests; a shorter sampling interval alone does not fix the experimental unit. |
 | D7 | `bench/harness/run_ab_docker.sh` | The sampler exits only when the container disappears, so the driver kills it before `wait`. A `--stop-file`/`--duration` would be cleaner. |
 | C | conformance | 14 Rust fixtures, all synthetic. Both round-4 blockers were *shim* bugs that no Rust fixture can catch; the off-GPU probes (`bench/harness/parity_probe_*.py`, `probe_feed_trace.py`) caught both in ~1 min each. Promote them to a CI job that runs inside the pinned engine images — that is the highest-value testing work outstanding. |
 

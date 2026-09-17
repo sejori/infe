@@ -147,7 +147,7 @@ Note that 0.5.18 → 0.5.19 changed the default cache *class* (plain → unified
 ## Results (median of 3 rounds)
 
 All three arms use the stock `qwen25` tool parser, so `deltas/req` is identical (10.2 / 10.4) across arms —
-**no granularity confound**. This is the cleanest comparison in the project so far.
+**no observed delta-count difference**. Session/order effects remain confounded (see correction below).
 
 | arm | conc | TTFT p50 | ITL p50 | ITL p99 | e2e p50 | **stream_span** | CPU% |
 |---|---|---|---|---|---|---|---|
@@ -161,41 +161,52 @@ All three arms use the stock `qwen25` tool parser, so `deltas/req` is identical 
 | python | 256 | 664.2 | 24.78 | 125.9 | 1208 | 515.9 | 172 |
 | rust | 256 | 752.2 | 24.32 | 133.3 | 1340 | **562.6** | 161 |
 
-## Reading
+## Corrected interpretation (2026-09-17)
 
-1. **The engine-version control is clean.** stock (0.5.18) vs python (0.5.19) on `stream_span`: +0.1 %, −0.0 %,
-   −0.4 %. The 0.5.18→0.5.19 change, including the switch to the unified cache class, is a no-op for this
-   workload. Any python-vs-rust difference is therefore the TreeCore backend.
-2. **The Rust TreeCore is slower than Python at concurrency.** `stream_span` +7.6 % at conc 64 and +9.1 % at
-   conc 256; e2e +11.9 % and +10.9 %; TTFT +11.7 % and +13.2 %. IQRs are ~19–30 ms against differences of
-   28–47 ms, so the gap is larger than the spread at both levels. At conc 8 the arms are identical (−0.0 %).
-3. **Rust uses less CPU while being slower**: 161 % vs 172 % (−6 %). Lower CPU with longer wall time points at
-   the backend blocking rather than computing — PyO3 boundary crossings, GIL round-trips or lock behaviour —
-   not at the tree algorithm being slow. That is the same class of cost we measured on `infe-parsers`.
-4. **This confirms the M0 decision with our own data.** SGLang's own C++ attempt showed microbenchmark wins and
-   zero end-to-end change; their Rust replacement ships with no published end-to-end numbers. On our hardware
-   the Rust backend is a net regression at concurrency.
+[Upstream feedback](https://github.com/sgl-project/sglang/issues/38536#issuecomment-5592129300)
+identified a design limitation: each arm ran in one server session, in fixed
+stock/Python/Rust order. Three rounds inside that session do not establish
+between-session reproducibility. Backend and session/order effects are confounded.
 
-## Limitation — state this whenever the result is quoted
+The table above is retained as historical data. Its CPU column repeats a single
+whole-session median at all three concurrency levels; it is not per-level CPU.
+The claim of a 6% CPU saving and the inference of PyO3/GIL/locking overhead are
+withdrawn. The commenter's original p-value and pooled-round test were also
+withdrawn; neither is evidence for or against a backend effect.
 
-Our workload has only a **short shared prefix** (system prompt + tools JSON schema, order hundreds of tokens),
-not the 61 K-token shared prefix SGLang used. So this round measures the Rust backend's **overhead**, not its
-**benefit**: it shows the backend costs something when the cache is not under pressure, and does not test
-whether it pays off when the cache is. A prefix-heavy workload would be needed to claim the latter — but that
-is precisely the regime the C++ PR already tested end-to-end and found flat.
+Rust had higher observed latency at concurrency 64/256 in this experiment.
+That is an unconfirmed regression, not proof that native TreeCore is slower.
+Request-level stream-span IQRs are descriptive, not uncertainty on the backend
+comparison. `stream_span` in the harness is the sum of inter-chunk intervals
+(first to last meaningful chunk), not wall time divided by delta count.
 
-## Verdict — `infe-kv` is confirmed dead
+The workload has a short shared prefix. It cannot establish performance under
+prefix-heavy cache pressure, nor can another implementation's C++ results
+settle whether Rust helps in that regime.
 
-The M0 kill criterion was met from SGLang's own PRs; Round 6 confirms it independently on our hardware. Native
-code in the radix cache does not make this engine faster, and in the opt-in Rust implementation that ships
-today it makes it measurably slower at concurrency. **Do not build `infe-kv`.**
+## Decision and follow-up
 
-Two things worth extracting rather than discarding:
+Keep `infe-kv` deprioritised: there is no demonstrated end-to-end improvement to
+justify building it. Round 6 does not independently confirm a regression or
+identify its mechanism. Profile before investing in a replacement component.
 
-- **A reportable finding for the SGLang maintainers.** Their Rust TreeCore's end-to-end benchmarking is an
-  explicitly "planned follow-up"; we have a clean three-arm measurement showing a 7.6–9.1 % `stream_span`
-  regression at conc 64/256 on a small dense model, with a pinned repro. That is worth filing.
-- **The component-ranking lesson, now twice-confirmed.** Both components that touched the CPU-side path around
-  GPU decode (`infe-parsers`, `infe-kv`) were flat or negative, because decode dominates and the CPU work is
-  single-digit percent of the step. Before starting `infe-sched` (BRIEF §6.3), profile first and apply the same
-  kill criterion — the prior is now that it will also be flat.
+`bench/harness/treecore_sessions.py` repeats Python/Rust on the same immutable
+image and model revision, with fresh containers and balanced randomised order.
+It warms each concurrency level, measures container CPU within each measured
+round, records GPU telemetry, and reports paired session effects. See the
+harness README for the protocol. No conclusion about a fix follows from the
+original CPU numbers; the completed reproduction is summarised below.
+
+## Independent-session follow-up (2026-09-17)
+
+The [twelve-session RTX 4090 run](../bench/results/rtx4090-20260917-treecore-sessions/README.md)
+did not reproduce the original 11–12% E2E slowdown under the warmed follow-up
+protocol. Median paired E2E effects were −0.33%, −1.03%, and +2.38% at concurrency
+8, 64, and 256. Individual pairs varied in direction. At 64/256 the CPU effects
+were +0.15%/+0.55%, not a 6% saving. All 11,808 measured requests passed structural
+tool-call checks, with matching delta counts.
+
+Keep `infe-kv` deprioritised. Recommend closing #38536 as unconfirmed / not
+reproduced under this protocol, with both datasets retained. This does not prove
+equivalence, rule out a smaller effect, or establish long-prefix performance.
+The report records the warmup change, shared-host limitations, and full evidence.
